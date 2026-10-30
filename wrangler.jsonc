@@ -13,6 +13,7 @@
     {
       "binding": "DB",
       "database_name": "treningsapp",
+      "database_id": "467e0538-6023-4ab7-b8e4-cfd2c0e3a1aa",
       "migrations_dir": "server/migrations"
     }
   ],
