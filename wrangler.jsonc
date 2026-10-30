@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "treningsapp",
+  "main": "server/src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // Built Vue app; only /api/* runs the Worker, everything else is static (SPA fallback).
+  "assets": {
+    "directory": "web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "treningsapp",
+      "migrations_dir": "server/migrations"
+    }
+  ],
+  "vars": {
+    "CAL_KIDS_NAME": "Samvær",
+    "CAL_RACES_NAME": "Løp / trening",
+    // Set after creating the Access application (Zero Trust → Access → Applications).
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": ""
+  },
+  // Secrets (wrangler secret put): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, INTERVALS_API_KEY, INTERVALS_ATHLETE_ID
+  "observability": { "enabled": true }
+}

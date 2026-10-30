@@ -10,10 +10,11 @@ Personal training dashboard for one runner (me). Pulls together calendar, kid we
 
 ## Stack
 - Frontend: Vue 3 + Vite + TypeScript, Composition API, `<script setup>`
-- Backend: small Node (Fastify or Express) API that holds secrets and proxies external APIs. The browser never sees an API key.
-- Storage: SQLite (better-sqlite3) for logs, plans and cached activities
-- Hosting: runs at home, reachable over Tailscale (same setup as Home Assistant). No public exposure.
-- Secrets in `.env` (gitignored). Provide `.env.example` with empty values only.
+- Backend: Cloudflare Worker (Hono) that holds secrets and proxies external APIs. The browser never sees an API key.
+- Storage: Cloudflare D1 (SQLite) for logs, plans and cached activities
+- Hosting: **always Cloudflare.** One Worker serves the API and the built Vue app (Workers static assets), deployed with `wrangler`. Nightly jobs use Cron Triggers.
+- Access: the app is protected by Cloudflare Access (only me). The Worker also verifies the Access JWT and fails closed if it is not configured.
+- Secrets via `wrangler secret put` in production and `.dev.vars` locally (gitignored). Provide `.dev.vars.example` with empty values only.
 
 ## Data sources
 
@@ -27,9 +28,9 @@ Personal training dashboard for one runner (me). Pulls together calendar, kid we
 - Find calendars by name via the calendarList endpoint, not hardcoded IDs.
 
 ### 2. Activities: intervals.icu API (free, syncs from Garmin Connect)
-- Auth: HTTP Basic, username `API_KEY`, password = personal API key from intervals.icu settings. Athlete id also from settings. Both go in `.env`.
+- Auth: HTTP Basic, username `API_KEY`, password = personal API key from intervals.icu settings. Athlete id also from settings. Both are Worker secrets.
 - Use: activities list (distance, moving time, avg pace, avg/max HR, type), wellness (weight if synced), fitness/fatigue/form (CTL/ATL/TSB).
-- Cache activities in SQLite; sync on demand + nightly.
+- Cache activities in D1; sync on demand + nightly (Cron Trigger).
 - No Strava. No Garmin scraping.
 
 ### 3. Manual input (in the app)
@@ -92,6 +93,6 @@ Short weeks (fewer than 7 days between handovers) scale the target proportionall
 7. Progress charts
 
 ## Conventions
-- Never commit `.env`, tokens or the SQLite file.
+- Never commit `.dev.vars`, `.env`, tokens or local D1 state (`.wrangler/`).
 - Keep external API calls in the backend only.
 - Small, typed modules; tests for date/week logic (timezone Europe/Oslo).

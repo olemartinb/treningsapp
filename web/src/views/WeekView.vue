@@ -1,6 +1,12 @@
+<script setup lang="ts">
+import { CalendarDays } from 'lucide-vue-next';
+import PageHeader from '../components/PageHeader.vue';
+import EmptyState from '../components/EmptyState.vue';
+</script>
+
 <template>
-  <section class="card">
-    <h2>Uke</h2>
-    <p class="muted">Kommer i steg 5 av byggeplanen.</p>
-  </section>
+  <div>
+    <PageHeader title="Uke" />
+    <EmptyState :icon="CalendarDays" title="Ukeoversikt kommer" text="7 dager med barneuke/eneuke-farger, planlagt mot gjennomført og km-mål." />
+  </div>
 </template>

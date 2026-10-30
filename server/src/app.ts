@@ -1,166 +1,171 @@
-// HTTP API. All external calls happen here; the browser only talks to /api.
-import fs from 'node:fs';
-import Fastify, { type FastifyInstance } from 'fastify';
-import fastifyStatic from '@fastify/static';
-import { config } from './config.js';
-import type { DB } from './db.js';
+// HTTP API (Cloudflare Worker). All external calls happen here; the browser only talks to /api.
+import { Hono, type Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { AccessError, accessToken, verifyAccessJwt } from './access.js';
 import { addDays, diffDays, isIsoDate, todayOslo, type IsoDate } from './dates.js';
+import type { Env } from './env.js';
 import { GoogleCalendar, GoogleNotConnectedError } from './calendar/google.js';
-import { CalendarService, type CalendarSource } from './calendar/service.js';
-import { getLog, listLogs, upsertLog, type DailyLogPatch } from './log/repo.js';
+import { CalendarService, type CalendarSource, type EventCache } from './calendar/service.js';
+import { getLog, lastWeight, listLogs, upsertLog, type DailyLogPatch } from './log/repo.js';
 
-export interface AppDeps {
-  db: DB;
+export interface AppOptions {
   /** Overrides Google (tests). */
   calendarSource?: CalendarSource;
   now?: () => Date;
-  logger?: boolean;
 }
+
+type AppEnv = { Bindings: Env; Variables: { google: GoogleCalendar; calendar: CalendarService } };
 
 const MAX_RANGE_DAYS = 400;
+const bad = (message: string) => new HTTPException(400, { message });
 
-const dateParam = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } as const;
-const rangeQuery = {
-  type: 'object',
-  required: ['from', 'to'],
-  properties: { from: dateParam, to: dateParam, refresh: { type: 'boolean' } },
-} as const;
-
-function checkRange(from: IsoDate, to: IsoDate) {
-  if (!isIsoDate(from) || !isIsoDate(to) || to < from || diffDays(from, to) > MAX_RANGE_DAYS) {
-    throw Object.assign(new Error('Invalid date range'), { statusCode: 400 });
-  }
+function range(c: Context<AppEnv>): { from: IsoDate; to: IsoDate } {
+  const from = c.req.query('from') ?? '';
+  const to = c.req.query('to') ?? '';
+  if (!isIsoDate(from) || !isIsoDate(to) || to < from || diffDays(from, to) > MAX_RANGE_DAYS) throw bad('Invalid date range');
+  return { from, to };
 }
 
-export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
-  const { db } = deps;
-  const now = deps.now ?? (() => new Date());
-  const app = Fastify({
-    logger: deps.logger ?? false,
-    ajv: { customOptions: { removeAdditional: false, coerceTypes: 'array' } },
-  });
-  const google = new GoogleCalendar(db);
-  const calendar = new CalendarService(deps.calendarSource ?? google);
-  const calendarConnected = () => Boolean(deps.calendarSource) || google.connected;
+function parsePatch(body: unknown): DailyLogPatch {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw bad('Body must be an object');
+  const patch: DailyLogPatch = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (key === 'kneeOk' && (value === null || typeof value === 'boolean')) patch.kneeOk = value;
+    else if (key === 'kneeNote' && (value === null || (typeof value === 'string' && value.length <= 500))) patch.kneeNote = value;
+    else if (key === 'weightKg' && (value === null || (typeof value === 'number' && value >= 40 && value <= 150))) patch.weightKg = value;
+    else throw bad(`Invalid field: ${key}`);
+  }
+  return patch;
+}
 
-  app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
-    if (err instanceof GoogleNotConnectedError) return reply.code(409).send({ error: 'google_not_connected' });
-    const status = err.statusCode ?? 500;
-    if (status >= 500) req.log.error(err);
-    return reply.code(status).send({ error: err.message });
+export function createApp(options: AppOptions = {}) {
+  const now = options.now ?? (() => new Date());
+  const eventCache: EventCache = new Map();
+  const app = new Hono<AppEnv>().basePath('/api');
+
+  app.onError((err, c) => {
+    if (err instanceof GoogleNotConnectedError) return c.json({ error: 'google_not_connected' }, 409);
+    if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+    console.error(err);
+    return c.json({ error: 'Internal error' }, 500);
+  });
+  app.notFound((c) => c.json({ error: 'Not found' }, 404));
+
+  // --- Cloudflare Access ----------------------------------------------------
+  app.use(async (c, next) => {
+    if (c.env.ALLOW_UNAUTHENTICATED === 'true') return next();
+    if (!c.env.ACCESS_TEAM_DOMAIN || !c.env.ACCESS_AUD) return c.json({ error: 'access_not_configured' }, 503);
+    const token = accessToken(c.req.raw.headers);
+    if (!token) return c.json({ error: 'unauthenticated' }, 401);
+    try {
+      await verifyAccessJwt(token, { teamDomain: c.env.ACCESS_TEAM_DOMAIN, aud: c.env.ACCESS_AUD });
+    } catch (err) {
+      if (err instanceof AccessError) return c.json({ error: 'unauthenticated' }, 401);
+      throw err;
+    }
+    return next();
   });
 
-  app.get('/api/health', async () => ({ ok: true, today: todayOslo(now()) }));
+  app.use(async (c, next) => {
+    const google = new GoogleCalendar(c.env.DB, c.env, new URL(c.req.url).origin);
+    c.set('google', google);
+    c.set(
+      'calendar',
+      new CalendarService(options.calendarSource ?? google, { kids: c.env.CAL_KIDS_NAME, races: c.env.CAL_RACES_NAME }, eventCache),
+    );
+    return next();
+  });
+
+  const calendarConnected = async (c: Context<AppEnv>) => Boolean(options.calendarSource) || (await c.var.google.connected());
+
+  app.get('/health', (c) => c.json({ ok: true, today: todayOslo(now()) }));
 
   // --- Google OAuth -------------------------------------------------------
-  app.get('/api/auth/google/status', async () => ({
-    configured: google.configured,
-    connected: calendarConnected(),
-  }));
+  app.get('/auth/google/status', async (c) =>
+    c.json({ configured: c.var.google.configured, connected: await calendarConnected(c) }),
+  );
 
-  app.get('/api/auth/google/start', async (_req, reply) => {
-    if (!google.configured) return reply.code(400).send({ error: 'GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing in .env' });
-    return reply.redirect(google.authUrl());
+  app.get('/auth/google/start', async (c) => {
+    if (!c.var.google.configured) throw bad('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set');
+    return c.redirect(await c.var.google.authUrl());
   });
 
-  app.get<{ Querystring: { code?: string; state?: string; error?: string } }>('/api/auth/google/callback', async (req, reply) => {
-    const { code, state, error } = req.query;
-    if (error || !code || !state) return reply.code(400).send({ error: error ?? 'Missing code/state' });
-    await google.handleCallback(code, state);
-    calendar.invalidate();
-    return reply.redirect('/?google=connected');
+  app.get('/auth/google/callback', async (c) => {
+    const { code, state, error } = c.req.query();
+    if (error || !code || !state) throw bad(error ?? 'Missing code/state');
+    await c.var.google.handleCallback(code, state);
+    eventCache.clear();
+    return c.redirect('/?google=connected');
   });
 
-  app.post('/api/auth/google/disconnect', async () => {
-    google.disconnect();
-    calendar.invalidate();
-    return { connected: false };
+  app.post('/auth/google/disconnect', async (c) => {
+    await c.var.google.disconnect();
+    eventCache.clear();
+    return c.json({ connected: false });
   });
 
   // --- Calendar -----------------------------------------------------------
-  app.get<{ Querystring: { from: IsoDate; to: IsoDate; refresh?: boolean } }>(
-    '/api/calendar/days',
-    { schema: { querystring: rangeQuery } },
-    async (req) => {
-      const { from, to, refresh } = req.query;
-      checkRange(from, to);
-      if (refresh) calendar.invalidate();
-      return calendar.days(from, to);
-    },
-  );
-
-  app.get<{ Querystring: { from: IsoDate; to: IsoDate } }>(
-    '/api/calendar/races',
-    { schema: { querystring: rangeQuery } },
-    async (req) => {
-      checkRange(req.query.from, req.query.to);
-      return { races: await calendar.races(req.query.from, req.query.to) };
-    },
-  );
-
-  // --- Daily log (knee test + weight) ------------------------------------
-  app.get<{ Querystring: { from: IsoDate; to: IsoDate } }>('/api/log', { schema: { querystring: rangeQuery } }, async (req) => {
-    checkRange(req.query.from, req.query.to);
-    return { logs: listLogs(db, req.query.from, req.query.to) };
+  app.get('/calendar/days', async (c) => {
+    const { from, to } = range(c);
+    if (c.req.query('refresh') === 'true') eventCache.clear();
+    return c.json(await c.var.calendar.days(from, to));
   });
 
-  app.get<{ Params: { date: IsoDate } }>(
-    '/api/log/:date',
-    { schema: { params: { type: 'object', properties: { date: dateParam } } } },
-    async (req) => getLog(db, req.params.date),
-  );
+  app.get('/calendar/races', async (c) => {
+    const { from, to } = range(c);
+    return c.json({ races: await c.var.calendar.races(from, to) });
+  });
 
-  app.put<{ Params: { date: IsoDate }; Body: DailyLogPatch }>(
-    '/api/log/:date',
-    {
-      schema: {
-        params: { type: 'object', properties: { date: dateParam } },
-        body: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            kneeOk: { type: ['boolean', 'null'] },
-            kneeNote: { type: ['string', 'null'], maxLength: 500 },
-            weightKg: { type: ['number', 'null'], minimum: 40, maximum: 150 },
-          },
-        },
-      },
-    },
-    async (req, reply) => {
-      if (!isIsoDate(req.params.date)) return reply.code(400).send({ error: 'Invalid date' });
-      if (req.params.date > todayOslo(now())) return reply.code(400).send({ error: 'Cannot log a future date' });
-      return upsertLog(db, req.params.date, req.body, now());
-    },
-  );
+  // --- Daily log (knee test + weight) ------------------------------------
+  app.get('/log', async (c) => {
+    const { from, to } = range(c);
+    return c.json({ logs: await listLogs(c.env.DB, from, to) });
+  });
+
+  app.get('/log/:date', async (c) => {
+    const date = c.req.param('date');
+    if (!isIsoDate(date)) throw bad('Invalid date');
+    return c.json(await getLog(c.env.DB, date));
+  });
+
+  app.put('/log/:date', async (c) => {
+    const date = c.req.param('date');
+    if (!isIsoDate(date)) throw bad('Invalid date');
+    if (date > todayOslo(now())) throw bad('Cannot log a future date');
+    const patch = parsePatch(await c.req.json().catch(() => null));
+    return c.json(await upsertLog(c.env.DB, date, patch, now()));
+  });
 
   // --- Today (aggregate for the morning view) -----------------------------
-  app.get('/api/today', async () => {
+  app.get('/today', async (c) => {
+    const db = c.env.DB;
     const today = todayOslo(now());
-    const log = getLog(db, today);
-    const withoutCalendar = { date: today, log, calendar: null, nextRace: null };
-    if (!calendarConnected()) return withoutCalendar;
+    const [log, week, last] = await Promise.all([getLog(db, today), listLogs(db, addDays(today, -6), today), lastWeight(db, today)]);
+    const weights = week.flatMap((l) => (l.weightKg === null ? [] : [l.weightKg]));
+    const weight = {
+      last,
+      avg7: weights.length ? Math.round((weights.reduce((a, b) => a + b, 0) / weights.length) * 10) / 10 : null,
+      count7: weights.length,
+    };
+    const withoutCalendar = { date: today, log, weight, calendar: null, nextRace: null };
+    if (!(await calendarConnected(c))) return c.json(withoutCalendar);
 
     try {
       const [{ days, periods }, races] = await Promise.all([
-        calendar.days(today, today),
-        calendar.races(today, addDays(today, 180)),
+        c.var.calendar.days(today, today),
+        c.var.calendar.races(today, addDays(today, 180)),
       ]);
+      // Whole current period, for the day strip.
+      const period = periods[0] ?? null;
+      const periodDays = period ? (await c.var.calendar.days(period.start, addDays(period.end, -1))).days : [];
       const nextRace = races[0] ? { ...races[0], inDays: diffDays(today, races[0].date) } : null;
-      return { date: today, log, calendar: { day: days[0], period: periods[0] ?? null }, nextRace };
+      return c.json({ date: today, log, weight, calendar: { day: days[0], period, periodDays }, nextRace });
     } catch (err) {
       // Token revoked since the check above: the view still works for knee/weight.
-      if (err instanceof GoogleNotConnectedError) return withoutCalendar;
+      if (err instanceof GoogleNotConnectedError) return c.json(withoutCalendar);
       throw err;
     }
   });
-
-  // --- Built web app (production) -----------------------------------------
-  if (fs.existsSync(config.webDist)) {
-    await app.register(fastifyStatic, { root: config.webDist });
-    app.setNotFoundHandler((req, reply) =>
-      req.url.startsWith('/api/') ? reply.code(404).send({ error: 'Not found' }) : reply.sendFile('index.html'),
-    );
-  }
 
   return app;
 }

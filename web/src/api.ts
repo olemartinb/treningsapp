@@ -1,14 +1,15 @@
 // Typed client for the backend. Types come straight from the server modules (type-only imports).
 import type { DayInfo, WeekType } from '../../server/src/calendar/kidWeeks';
 import type { PeriodWithTarget, Race } from '../../server/src/calendar/service';
-import type { DailyLog, DailyLogPatch } from '../../server/src/log/repo';
+import type { DailyLog, DailyLogPatch } from '../../server/src/log/types';
 
 export type { DailyLog, DayInfo, PeriodWithTarget, Race, WeekType };
 
 export interface Today {
   date: string;
   log: DailyLog;
-  calendar: { day: DayInfo; period: PeriodWithTarget | null } | null;
+  weight: { last: { date: string; weightKg: number } | null; avg7: number | null; count7: number };
+  calendar: { day: DayInfo; period: PeriodWithTarget | null; periodDays: DayInfo[] } | null;
   nextRace: (Race & { inDays: number }) | null;
 }
 

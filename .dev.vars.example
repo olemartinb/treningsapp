@@ -1,0 +1,6 @@
+# Local development only (copy to .dev.vars). Production uses `wrangler secret put`.
+ALLOW_UNAUTHENTICATED=true
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+INTERVALS_API_KEY=
+INTERVALS_ATHLETE_ID=

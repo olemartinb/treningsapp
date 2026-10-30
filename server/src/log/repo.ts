@@ -1,21 +1,8 @@
 // Daily knee test + fasting weight, one row per Oslo date.
-import type { DB } from '../db.js';
 import type { IsoDate } from '../dates.js';
+import type { DailyLog, DailyLogPatch } from './types.js';
 
-export interface DailyLog {
-  date: IsoDate;
-  /** true = 100 % pain-free, false = failed, null = not tested. */
-  kneeOk: boolean | null;
-  kneeNote: string | null;
-  kneeTestedAt: string | null;
-  weightKg: number | null;
-}
-
-export interface DailyLogPatch {
-  kneeOk?: boolean | null;
-  kneeNote?: string | null;
-  weightKg?: number | null;
-}
+export type { DailyLog, DailyLogPatch };
 
 interface Row {
   date: string;
@@ -35,19 +22,28 @@ const fromRow = (r: Row): DailyLog => ({
 
 export const emptyLog = (date: IsoDate): DailyLog => ({ date, kneeOk: null, kneeNote: null, kneeTestedAt: null, weightKg: null });
 
-export function getLog(db: DB, date: IsoDate): DailyLog {
-  const row = db.prepare('SELECT * FROM daily_log WHERE date = ?').get(date) as Row | undefined;
+export async function getLog(db: D1Database, date: IsoDate): Promise<DailyLog> {
+  const row = await db.prepare('SELECT * FROM daily_log WHERE date = ?').bind(date).first<Row>();
   return row ? fromRow(row) : emptyLog(date);
 }
 
-export function listLogs(db: DB, from: IsoDate, to: IsoDate): DailyLog[] {
-  const rows = db.prepare('SELECT * FROM daily_log WHERE date BETWEEN ? AND ? ORDER BY date').all(from, to) as Row[];
-  return rows.map(fromRow);
+export async function listLogs(db: D1Database, from: IsoDate, to: IsoDate): Promise<DailyLog[]> {
+  const { results } = await db.prepare('SELECT * FROM daily_log WHERE date BETWEEN ? AND ? ORDER BY date').bind(from, to).all<Row>();
+  return results.map(fromRow);
+}
+
+/** Latest logged weight on or before a date. */
+export async function lastWeight(db: D1Database, onOrBefore: IsoDate): Promise<{ date: IsoDate; weightKg: number } | null> {
+  const row = await db
+    .prepare('SELECT date, weight_kg FROM daily_log WHERE date <= ? AND weight_kg IS NOT NULL ORDER BY date DESC LIMIT 1')
+    .bind(onOrBefore)
+    .first<{ date: string; weight_kg: number }>();
+  return row ? { date: row.date, weightKg: row.weight_kg } : null;
 }
 
 /** Applies only the fields present in the patch. */
-export function upsertLog(db: DB, date: IsoDate, patch: DailyLogPatch, now = new Date()): DailyLog {
-  const next = { ...getLog(db, date) };
+export async function upsertLog(db: D1Database, date: IsoDate, patch: DailyLogPatch, now = new Date()): Promise<DailyLog> {
+  const next = { ...(await getLog(db, date)) };
   if (patch.kneeOk !== undefined) {
     next.kneeOk = patch.kneeOk;
     next.kneeTestedAt = patch.kneeOk === null ? null : now.toISOString();
@@ -55,16 +51,22 @@ export function upsertLog(db: DB, date: IsoDate, patch: DailyLogPatch, now = new
   if (patch.kneeNote !== undefined) next.kneeNote = patch.kneeNote?.trim() || null;
   if (patch.weightKg !== undefined) next.weightKg = patch.weightKg === null ? null : Math.round(patch.weightKg * 10) / 10;
 
-  db.prepare(
-    `INSERT INTO daily_log (date, knee_ok, knee_note, knee_tested_at, weight_kg, updated_at)
-     VALUES (@date, @kneeOk, @kneeNote, @kneeTestedAt, @weightKg, @updatedAt)
-     ON CONFLICT(date) DO UPDATE SET
-       knee_ok = excluded.knee_ok, knee_note = excluded.knee_note, knee_tested_at = excluded.knee_tested_at,
-       weight_kg = excluded.weight_kg, updated_at = excluded.updated_at`,
-  ).run({
-    ...next,
-    kneeOk: next.kneeOk === null ? null : Number(next.kneeOk),
-    updatedAt: now.toISOString(),
-  });
+  await db
+    .prepare(
+      `INSERT INTO daily_log (date, knee_ok, knee_note, knee_tested_at, weight_kg, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(date) DO UPDATE SET
+         knee_ok = excluded.knee_ok, knee_note = excluded.knee_note, knee_tested_at = excluded.knee_tested_at,
+         weight_kg = excluded.weight_kg, updated_at = excluded.updated_at`,
+    )
+    .bind(
+      next.date,
+      next.kneeOk === null ? null : Number(next.kneeOk),
+      next.kneeNote,
+      next.kneeTestedAt,
+      next.weightKg,
+      now.toISOString(),
+    )
+    .run();
   return next;
 }

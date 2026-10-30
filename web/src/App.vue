@@ -1,33 +1,34 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { CalendarDays, ChartLine, ListChecks, Sun } from 'lucide-vue-next';
 import { useRoute } from 'vue-router';
-import { router } from './router';
 
 const route = useRoute();
-const tabs = router.getRoutes().filter((r) => r.meta.label);
-
-const theme = ref(document.documentElement.dataset.theme ?? 'dark');
-function toggleTheme() {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = theme.value;
-  try {
-    localStorage.setItem('theme', theme.value);
-  } catch {}
-}
+const tabs = [
+  { path: '/', label: 'I dag', icon: Sun },
+  { path: '/uke', label: 'Uke', icon: CalendarDays },
+  { path: '/plan', label: 'Plan', icon: ListChecks },
+  { path: '/fremgang', label: 'Fremgang', icon: ChartLine },
+];
 </script>
 
 <template>
   <div class="shell">
-    <header class="top">
-      <span class="brand">Trening</span>
-      <button class="theme" :aria-label="theme === 'dark' ? 'Lyst tema' : 'Mørkt tema'" @click="toggleTheme">
-        {{ theme === 'dark' ? '☀︎' : '☾' }}
-      </button>
-    </header>
-    <main><RouterView /></main>
-    <nav class="tabs">
-      <RouterLink v-for="t in tabs" :key="t.path" :to="t.path" :class="{ active: route.path === t.path }">
-        {{ t.meta.label }}
+    <RouterView v-slot="{ Component }">
+      <Transition name="fade" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
+
+    <nav class="tabs" aria-label="Hovedmeny">
+      <RouterLink
+        v-for="t in tabs"
+        :key="t.path"
+        :to="t.path"
+        :class="{ active: route.path === t.path }"
+        :aria-current="route.path === t.path ? 'page' : undefined"
+      >
+        <component :is="t.icon" :stroke-width="2" aria-hidden="true" />
+        <span>{{ t.label }}</span>
       </RouterLink>
     </nav>
   </div>
@@ -38,39 +39,46 @@ function toggleTheme() {
   max-width: 560px;
   margin: 0 auto;
   min-height: 100dvh;
-  padding: 0 16px calc(80px + env(safe-area-inset-bottom));
+  padding: calc(16px + env(safe-area-inset-top)) 16px calc(112px + env(safe-area-inset-bottom));
 }
-.top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: calc(12px + env(safe-area-inset-top)) 0 8px;
-}
-.brand { font-weight: 700; letter-spacing: 0.02em; }
-.theme {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  width: 40px;
-  height: 40px;
-  cursor: pointer;
-}
+
 .tabs {
   position: fixed;
-  inset: auto 0 0 0;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  translate: -50% 0;
+  width: min(100% - 32px, 420px);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom);
+  gap: 4px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--surface-2) 72%, transparent);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 12px 40px oklch(0% 0 0 / 0.25);
+  z-index: 10;
 }
+
 .tabs a {
-  text-align: center;
-  padding: 14px 0;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 0 6px;
+  border-radius: 999px;
   color: var(--muted);
   text-decoration: none;
+  font-size: 11px;
   font-weight: 600;
-  font-size: 14px;
+  transition: color 0.2s, background-color 0.25s var(--ease);
 }
-.tabs a.active { color: var(--accent); }
+.tabs a svg { width: 22px; height: 22px; }
+.tabs a.active {
+  color: var(--text);
+  background: color-mix(in oklch, var(--text) 10%, transparent);
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.18s var(--ease); }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

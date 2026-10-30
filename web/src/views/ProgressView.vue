@@ -1,6 +1,12 @@
+<script setup lang="ts">
+import { ChartLine } from 'lucide-vue-next';
+import PageHeader from '../components/PageHeader.vue';
+import EmptyState from '../components/EmptyState.vue';
+</script>
+
 <template>
-  <section class="card">
-    <h2>Fremgang</h2>
-    <p class="muted">Kommer i steg 7 av byggeplanen.</p>
-  </section>
+  <div>
+    <PageHeader title="Fremgang" />
+    <EmptyState :icon="ChartLine" title="Grafene kommer" text="Km per uke, terskelfart mot 3:47/km, aerob effektivitet, vekt og knetest-historikk." />
+  </div>
 </template>

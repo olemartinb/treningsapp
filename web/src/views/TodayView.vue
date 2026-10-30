@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watchEffect } from 'vue';
+import { ArrowLeftRight, Baby, CalendarDays, Clock, Flag, Lightbulb, Pin, User } from 'lucide-vue-next';
 import { api, ApiError, type DailyLog, type Today } from '../api';
-import { WEEK_LABEL, dayBefore, formatKm, formatLongDate, formatShortDate } from '../format';
+import { WEEK_LABEL, dayBefore, formatKm, formatLongDate, formatShortDate, formatWeekdayDate, greeting } from '../format';
+import { suggestSession } from '../suggest';
+import PageHeader from '../components/PageHeader.vue';
+import PeriodStrip from '../components/PeriodStrip.vue';
 import KneeTestCard from '../components/KneeTestCard.vue';
 import WeightCard from '../components/WeightCard.vue';
 
@@ -12,9 +16,9 @@ const error = ref<string | null>(null);
 const googleConfigured = ref(true);
 
 async function load() {
-  error.value = null;
   try {
     today.value = await api.today();
+    error.value = null;
     if (!today.value.calendar) googleConfigured.value = (await api.googleStatus()).configured;
   } catch (e) {
     error.value = e instanceof ApiError ? `Feil fra serveren: ${e.message}` : 'Får ikke kontakt med serveren';
@@ -22,7 +26,9 @@ async function load() {
 }
 
 function onSaved(log: DailyLog) {
-  if (today.value) today.value.log = log;
+  if (!today.value) return;
+  today.value.log = log;
+  void load(); // refresh the 7-day average
 }
 
 const day = computed(() => today.value?.calendar?.day ?? null);
@@ -31,88 +37,171 @@ const dayNo = computed(() => {
   if (!period.value || !today.value) return 0;
   return Math.round((Date.parse(today.value.date) - Date.parse(period.value.start)) / 86_400_000) + 1;
 });
+const flags = computed(() => (day.value?.flags ?? []).filter((f) => !(day.value?.handover && /^bytte/i.test(f.title))));
+const suggestion = computed(() => (today.value ? suggestSession(day.value, today.value.log) : null));
 
+// Tint the whole app with the current week type (kept when switching tabs).
+watchEffect(() => {
+  if (day.value?.type) document.documentElement.dataset.week = day.value.type;
+});
 onMounted(load);
 </script>
 
 <template>
   <div class="stack">
-    <p v-if="error" class="card error">{{ error }}</p>
+    <PageHeader :overline="today ? formatLongDate(today.date) : ' '" :title="greeting()" />
+
+    <p v-if="error" class="card error rise" role="alert">{{ error }}</p>
 
     <template v-if="today">
-      <h1>{{ formatLongDate(today.date) }}</h1>
-
-      <section v-if="!today.calendar" class="card">
-        <h2>Kalender</h2>
-        <p v-if="googleConfigured">Koble til Google Kalender for å se barneuke/eneuke og løp.</p>
-        <p v-else class="muted small">Legg inn GOOGLE_CLIENT_ID og GOOGLE_CLIENT_SECRET i .env og start serveren på nytt.</p>
-        <a v-if="googleConfigured" class="btn primary connect" href="/api/auth/google/start">Koble til Google</a>
+      <!-- Week type -->
+      <section v-if="!today.calendar" class="card connect rise" style="--i: 1">
+        <p class="eyebrow"><CalendarDays aria-hidden="true" /> Kalender</p>
+        <h2>Koble til kalenderen</h2>
+        <p v-if="googleConfigured" class="muted small">Barneuke, eneuke, bytter og løp hentes fra Google Kalender.</p>
+        <p v-else class="muted small">GOOGLE_CLIENT_ID og GOOGLE_CLIENT_SECRET mangler som Worker-secrets.</p>
+        <a v-if="googleConfigured" class="btn primary" href="/api/auth/google/start">Koble til Google</a>
       </section>
 
-      <section v-else class="card week">
-        <h2>Uketype</h2>
-        <span class="chip big" :class="day?.type ?? 'unknown'">{{ day?.type ? WEEK_LABEL[day.type] : 'Ukjent' }}</span>
+      <section v-else class="card hero rise" style="--i: 1">
+        <div class="hero-top">
+          <span class="type">
+            <Baby v-if="day?.type === 'barneuke'" aria-hidden="true" />
+            <User v-else aria-hidden="true" />
+            {{ day?.type ? WEEK_LABEL[day.type] : 'Ukjent uke' }}
+          </span>
+          <span v-if="period" class="small muted">dag {{ dayNo }} av {{ period.days }}</span>
+        </div>
 
         <template v-if="period">
-          <p class="small muted">
-            {{ formatShortDate(period.start) }} – {{ formatShortDate(dayBefore(period.end)) }} · dag {{ dayNo }} av {{ period.days }}
-            <span v-if="period.provisional">(foreløpig)</span>
-          </p>
           <p class="target">
-            Mål <strong>{{ formatKm(period.target.min) }}–{{ formatKm(period.target.max) }} km</strong>
+            <span class="num">{{ formatKm(period.target.min) }}–{{ formatKm(period.target.max) }}</span>
+            <span class="unit">km</span>
           </p>
-          <p v-if="period.target.scaled" class="small warn">
-            {{ period.days < 7 ? 'Kort' : 'Lang' }} periode ({{ period.days }} dager) – skalert fra {{ BASE_KM[period.type] }} km/uke
+          <p class="small muted sub">
+            Mål {{ formatShortDate(period.start) }} – {{ formatShortDate(dayBefore(period.end)) }}
+            <template v-if="period.provisional"> · foreløpig</template>
           </p>
+          <p v-if="period.target.scaled" class="scaled small">
+            {{ period.days < 7 ? 'Kort' : 'Lang' }} periode, {{ period.days }} dager · skalert fra {{ BASE_KM[period.type] }} km/uke
+          </p>
+          <PeriodStrip :days="today.calendar.periodDays" :today="today.date" />
         </template>
 
-        <ul v-if="day && (day.handover || day.flags.length)" class="flags">
+        <ul v-if="day && (day.handover || flags.length)" class="flags">
           <li v-if="day.handover">
-            🔁 Bytte i dag<template v-if="day.handover.time"> kl. {{ day.handover.time }}</template>
-            → {{ WEEK_LABEL[day.handover.to] }}
+            <ArrowLeftRight aria-hidden="true" />
+            <span>Bytte i dag<template v-if="day.handover.time"> kl. <strong class="num">{{ day.handover.time }}</strong></template></span>
+            <span class="to">→ {{ WEEK_LABEL[day.handover.to] }}</span>
           </li>
-          <li v-for="f in day.flags.filter((f) => !(day!.handover && /^bytte/i.test(f.title)))" :key="f.title + f.time">
-            <template v-if="f.kind === 'kids-home-all-day'">👧 Barna hjemme hele dagen – {{ f.title }}</template>
-            <template v-else-if="f.kind === 'timed'">🕒 {{ f.time }} {{ f.title }}</template>
-            <template v-else>📌 {{ f.title }}</template>
+          <li v-for="f in flags" :key="f.title + f.time">
+            <Baby v-if="f.kind === 'kids-home-all-day'" aria-hidden="true" />
+            <Clock v-else-if="f.kind === 'timed'" aria-hidden="true" />
+            <Pin v-else aria-hidden="true" />
+            <span v-if="f.kind === 'kids-home-all-day'" class="two">
+              Barna hjemme hele dagen
+              <small>{{ f.title }}</small>
+            </span>
+            <span v-else-if="f.kind === 'timed'"><strong class="num">{{ f.time }}</strong> {{ f.title }}</span>
+            <span v-else>{{ f.title }}</span>
           </li>
         </ul>
       </section>
 
-      <KneeTestCard :log="today.log" @saved="onSaved" />
-      <WeightCard :log="today.log" @saved="onSaved" />
+      <KneeTestCard class="rise" style="--i: 2" :log="today.log" @saved="onSaved" />
+      <WeightCard class="rise" style="--i: 3" :log="today.log" :weight="today.weight" @saved="onSaved" />
 
-      <section class="card">
-        <h2>Dagens økt</h2>
-        <p class="muted small">Plan og Garmin-data (via intervals.icu) kommer i steg 4–6.</p>
+      <section v-if="suggestion" class="card rise" style="--i: 4">
+        <p class="eyebrow"><Lightbulb aria-hidden="true" /> Dagens økt</p>
+        <h3>{{ suggestion.title }}</h3>
+        <p class="small muted">{{ suggestion.detail }}</p>
+        <p class="footnote small">Garmin-økter vises her når intervals.icu er koblet til.</p>
       </section>
 
-      <section v-if="today.nextRace" class="card">
-        <h2>Neste løp</h2>
-        <p class="race">
-          <strong>{{ today.nextRace.title }}</strong>
-          <span class="muted">
-            {{ formatShortDate(today.nextRace.date) }} ·
-            {{ today.nextRace.inDays === 0 ? 'i dag' : `om ${today.nextRace.inDays} dager` }}
-          </span>
+      <section v-if="today.nextRace" class="card race rise" style="--i: 5">
+        <div>
+          <p class="eyebrow"><Flag aria-hidden="true" /> Neste løp</p>
+          <h3>{{ today.nextRace.title }}</h3>
+          <p class="small muted">{{ formatWeekdayDate(today.nextRace.date) }}</p>
+        </div>
+        <p class="countdown">
+          <template v-if="today.nextRace.inDays === 0"><span class="big">I dag</span></template>
+          <template v-else>
+            <span class="big num">{{ today.nextRace.inDays }}</span>
+            <span class="small muted">{{ today.nextRace.inDays === 1 ? 'dag' : 'dager' }}</span>
+          </template>
         </p>
       </section>
     </template>
 
-    <p v-else-if="!error" class="muted">Laster …</p>
+    <div v-else-if="!error" class="skeleton" aria-busy="true">
+      <div class="card" /><div class="card" /><div class="card" />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-h1 { font-size: 24px; margin: 4px 0; }
-.chip.big { font-size: 22px; padding: 6px 16px; }
-.week p { margin: 8px 0 0; }
-.target { font-size: 18px; }
-.warn { color: var(--warn); }
-.flags { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
-.flags li { background: var(--surface-2); border-radius: 10px; padding: 8px 12px; }
-.race { display: flex; justify-content: space-between; gap: 8px; margin: 0; flex-wrap: wrap; }
-.connect { display: inline-flex; align-items: center; text-decoration: none; margin-top: 8px; }
+
+h2, h3 { margin: 0 0 4px; letter-spacing: -0.02em; }
+h2 { font-size: 22px; font-weight: 650; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; }
+
+.connect .btn { margin-top: 16px; width: 100%; }
+
+.hero {
+  overflow: hidden;
+  background:
+    radial-gradient(130% 90% at 0% 0%, color-mix(in oklch, var(--week) 30%, transparent), transparent 62%),
+    var(--surface);
+  border-color: color-mix(in oklch, var(--week) 22%, var(--border));
+}
+.hero-top { display: flex; justify-content: space-between; align-items: center; }
+.type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--week) 18%, transparent);
+  color: var(--week);
+  font-weight: 650;
+}
+.type svg { width: 18px; height: 18px; }
+.target { display: flex; align-items: baseline; gap: 8px; margin-top: 20px; }
+.target .num { font-size: clamp(44px, 15vw, 64px); font-weight: 600; line-height: 1; letter-spacing: -0.05em; }
+.target .unit { font-size: 20px; font-weight: 550; color: var(--muted); }
+.sub { margin: 6px 0 16px; }
+.scaled {
+  margin: -8px 0 16px;
+  color: var(--warn);
+}
+
+.flags { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 6px; }
+.flags li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--surface-2) 80%, transparent);
+  font-size: 15px;
+}
+.flags svg { flex: none; width: 18px; height: 18px; color: var(--week); }
+.flags .to { margin-left: auto; color: var(--muted); font-size: 13px; text-align: right; }
+.flags .two { display: grid; }
+.flags small { color: var(--muted); font-size: 13px; }
+
+.footnote { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--faint); }
+
+.race { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.countdown { display: grid; justify-items: end; text-align: right; }
+.countdown .big { font-size: 48px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; }
+
 .error { color: var(--bad); }
+
+.skeleton { display: grid; gap: 12px; }
+.skeleton .card { height: 160px; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.55; } }
 </style>

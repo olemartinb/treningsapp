@@ -1,6 +1,5 @@
 // Calendar facade used by the routes: caches Google responses briefly and
 // turns raw events into days, periods (with km targets) and races.
-import { config } from '../config.js';
 import { addDays, type IsoDate } from '../dates.js';
 import { periodTarget, type PeriodTarget } from '../training/targets.js';
 import { resolveDays, resolvePeriods, type CalEvent, type DayInfo, type KidPeriod } from './kidWeeks.js';
@@ -20,17 +19,27 @@ export type PeriodWithTarget = KidPeriod & { target: PeriodTarget };
 const MARGIN_DAYS = 28;
 const TTL_MS = 15 * 60_000;
 
-export class CalendarService {
-  private cache = new Map<string, { at: number; events: Promise<CalEvent[]> }>();
+export type EventCache = Map<string, { at: number; events: Promise<CalEvent[]> }>;
 
-  constructor(private source: CalendarSource) {}
+export interface CalendarNames {
+  kids: string;
+  races: string;
+}
+
+export class CalendarService {
+  constructor(
+    private source: CalendarSource,
+    private names: CalendarNames,
+    /** Shared across requests in one isolate. */
+    private cache: EventCache = new Map(),
+  ) {}
 
   invalidate() {
     this.cache.clear();
   }
 
   async days(from: IsoDate, to: IsoDate): Promise<{ days: DayInfo[]; periods: PeriodWithTarget[] }> {
-    const events = await this.events(config.google.kidsCalendar, addDays(from, -MARGIN_DAYS), addDays(to, MARGIN_DAYS));
+    const events = await this.events(this.names.kids, addDays(from, -MARGIN_DAYS), addDays(to, MARGIN_DAYS));
     const periods = resolvePeriods(events)
       .filter((p) => p.end > from && p.start <= to)
       .map((p) => ({ ...p, target: periodTarget(p) }));
@@ -38,7 +47,7 @@ export class CalendarService {
   }
 
   async races(from: IsoDate, to: IsoDate): Promise<Race[]> {
-    const events = await this.events(config.google.racesCalendar, from, to);
+    const events = await this.events(this.names.races, from, to);
     return events
       .filter((e) => e.status !== 'cancelled')
       .map((e) => ({ date: (e.start.date ?? e.start.dateTime ?? '').slice(0, 10), title: (e.summary ?? '').trim() }))

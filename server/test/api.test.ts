@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { FastifyInstance } from 'fastify';
+import { beforeEach, describe, expect, it } from 'vitest';
 import fixture from './fixtures/samvaer-2026h2.json' with { type: 'json' };
-import { buildApp } from '../src/app.js';
-import { openDb } from '../src/db.js';
+import { createApp } from '../src/app.js';
 import type { CalEvent } from '../src/calendar/kidWeeks.js';
+import type { Env } from '../src/env.js';
+import { testD1 } from './d1.js';
 
 const races: CalEvent[] = [
   { summary: 'Rotevatnet rundt', start: { date: '2026-10-25' }, end: { date: '2026-10-26' } },
@@ -13,48 +13,70 @@ const races: CalEvent[] = [
 // 30 Oct 2026, 06:15 in Oslo.
 const NOW = new Date('2026-10-30T05:15:00Z');
 
-let app: FastifyInstance;
-beforeEach(async () => {
-  app = await buildApp({
-    db: openDb(':memory:'),
-    now: () => NOW,
-    calendarSource: {
-      listEvents: async (name) => (name === 'Samvær' ? (fixture.items as CalEvent[]) : races),
-    },
-  });
+const app = createApp({
+  now: () => NOW,
+  calendarSource: { listEvents: async (name) => (name === 'Samvær' ? (fixture.items as CalEvent[]) : races) },
 });
-afterEach(() => app.close());
+
+let env: Env;
+beforeEach(() => {
+  env = {
+    DB: testD1(),
+    CAL_KIDS_NAME: 'Samvær',
+    CAL_RACES_NAME: 'Løp / trening',
+    ACCESS_TEAM_DOMAIN: '',
+    ACCESS_AUD: '',
+    ALLOW_UNAUTHENTICATED: 'true',
+  };
+});
+
+const get = (path: string) => app.request(path, {}, env);
+const put = (path: string, body: unknown) =>
+  app.request(path, { method: 'PUT', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }, env);
 
 describe('API', () => {
-  it('today combines kid week, flags, target, log and next race', async () => {
-    const res = await app.inject('/api/today');
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
+  it('today combines kid week, flags, period strip, target, log and next race', async () => {
+    const res = await get('/api/today');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
     expect(body.date).toBe('2026-10-30');
     expect(body.calendar.day).toMatchObject({ type: 'barneuke', kidsHomeAllDay: true });
     expect(body.calendar.period).toMatchObject({ start: '2026-10-26', end: '2026-11-02', target: { min: 25, max: 35 } });
+    expect(body.calendar.periodDays.map((d: { date: string }) => d.date)).toEqual([
+      '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01',
+    ]);
+    expect(body.calendar.periodDays[0].handover).toMatchObject({ from: 'eneuke', to: 'barneuke' });
     expect(body.nextRace).toEqual({ date: '2026-11-29', title: 'Rotevatnet rundt', inDays: 30 });
     expect(body.log).toMatchObject({ kneeOk: null, weightKg: null });
+    expect(body.weight).toEqual({ last: null, avg7: null, count7: 0 });
   });
 
   it('logs knee test and weight independently', async () => {
-    let res = await app.inject({ method: 'PUT', url: '/api/log/2026-10-30', payload: { kneeOk: true } });
-    expect(res.json()).toMatchObject({ kneeOk: true, weightKg: null, kneeTestedAt: NOW.toISOString() });
-    res = await app.inject({ method: 'PUT', url: '/api/log/2026-10-30', payload: { weightKg: 71.84 } });
-    expect(res.json()).toMatchObject({ kneeOk: true, weightKg: 71.8 });
-    res = await app.inject('/api/log?from=2026-10-01&to=2026-10-31');
-    expect(res.json().logs).toHaveLength(1);
+    let res = await put('/api/log/2026-10-30', { kneeOk: true });
+    expect(await res.json()).toMatchObject({ kneeOk: true, weightKg: null, kneeTestedAt: NOW.toISOString() });
+    res = await put('/api/log/2026-10-30', { weightKg: 71.84 });
+    expect(await res.json()).toMatchObject({ kneeOk: true, weightKg: 71.8 });
+    res = await get('/api/log?from=2026-10-01&to=2026-10-31');
+    expect(((await res.json()) as any).logs).toHaveLength(1);
+  });
+
+  it('today reports last weight and the 7-day average', async () => {
+    await put('/api/log/2026-10-20', { weightKg: 73 }); // outside the 7-day window
+    await put('/api/log/2026-10-27', { weightKg: 72.4 });
+    await put('/api/log/2026-10-29', { weightKg: 71.6 });
+    const body = (await (await get('/api/today')).json()) as any;
+    expect(body.weight).toEqual({ last: { date: '2026-10-29', weightKg: 71.6 }, avg7: 72, count7: 2 });
   });
 
   it('rejects bad log input and future dates', async () => {
-    expect((await app.inject({ method: 'PUT', url: '/api/log/2026-10-30', payload: { weightKg: 7 } })).statusCode).toBe(400);
-    expect((await app.inject({ method: 'PUT', url: '/api/log/2026-10-30', payload: { foo: 1 } })).statusCode).toBe(400);
-    expect((await app.inject({ method: 'PUT', url: '/api/log/2026-10-31', payload: { kneeOk: true } })).statusCode).toBe(400);
+    expect((await put('/api/log/2026-10-30', { weightKg: 7 })).status).toBe(400);
+    expect((await put('/api/log/2026-10-30', { foo: 1 })).status).toBe(400);
+    expect((await put('/api/log/2026-10-30', [])).status).toBe(400);
+    expect((await put('/api/log/2026-10-31', { kneeOk: true })).status).toBe(400);
   });
 
   it('calendar days returns periods with scaled targets', async () => {
-    const res = await app.inject('/api/calendar/days?from=2026-11-02&to=2026-11-08');
-    const { periods, days } = res.json();
+    const { periods, days } = (await (await get('/api/calendar/days?from=2026-11-02&to=2026-11-08')).json()) as any;
     expect(days).toHaveLength(7);
     expect(periods.map((p: { type: string; days: number }) => [p.type, p.days])).toEqual([
       ['eneuke', 4],
@@ -64,6 +86,20 @@ describe('API', () => {
   });
 
   it('rejects an invalid range', async () => {
-    expect((await app.inject('/api/calendar/days?from=2026-11-08&to=2026-11-02')).statusCode).toBe(400);
+    expect((await get('/api/calendar/days?from=2026-11-08&to=2026-11-02')).status).toBe(400);
+  });
+
+  it('fails closed when Access is not configured', async () => {
+    env.ALLOW_UNAUTHENTICATED = undefined;
+    const res = await get('/api/today');
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'access_not_configured' });
+  });
+
+  it('requires an Access token when Access is configured', async () => {
+    env.ALLOW_UNAUTHENTICATED = undefined;
+    env.ACCESS_TEAM_DOMAIN = 'team.cloudflareaccess.com';
+    env.ACCESS_AUD = 'aud';
+    expect((await get('/api/today')).status).toBe(401);
   });
 });

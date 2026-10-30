@@ -30,3 +30,23 @@ export function formatPace(secPerKm: number): string {
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+const weekdayShort = fmt({ weekday: 'narrow' });
+export const weekdayLetter = (d: string) => weekdayShort.format(parse(d)).toUpperCase();
+
+const weekdayDay = fmt({ weekday: 'short', day: 'numeric', month: 'short' });
+export const formatWeekdayDate = (d: string) => weekdayDay.format(parse(d));
+
+const osloTime = new Intl.DateTimeFormat('nb-NO', { timeZone: 'Europe/Oslo', hour: '2-digit', minute: '2-digit' });
+export const formatTime = (iso: string) => osloTime.format(new Date(iso));
+
+const osloHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Oslo', hour: 'numeric', hour12: false });
+export function greeting(now = new Date()): string {
+  const h = Number(osloHour.format(now));
+  if (h >= 5 && h < 10) return 'God morgen';
+  if (h >= 10 && h < 18) return 'God dag';
+  return 'God kveld';
+}
+
+/** One decimal with a Norwegian comma, no unit. */
+export const formatDecimal = (n: number) => n.toFixed(1).replace('.', ',');

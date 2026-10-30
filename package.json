@@ -4,10 +4,15 @@
   "type": "module",
   "workspaces": ["server", "web"],
   "scripts": {
-    "dev": "npm run dev -w server & npm run dev -w web",
-    "build": "npm run build -w web && npm run build -w server",
-    "start": "npm run start -w server",
+    "dev": "npm run db:migrate:local && (wrangler dev --port 8787 & npm run dev -w web)",
+    "build": "npm run build -w web",
     "test": "npm test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "db:migrate:local": "wrangler d1 migrations apply treningsapp --local",
+    "db:migrate:remote": "wrangler d1 migrations apply treningsapp --remote",
+    "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.156.0"
   }
 }
