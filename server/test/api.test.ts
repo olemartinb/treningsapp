@@ -159,6 +159,62 @@ describe('API', () => {
     expect((await get('/api/week?start=nope')).status).toBe(400);
   });
 
+  it('plan: fill a period from the template, then edit, tick and delete sessions', async () => {
+    const send = (method: string, path: string, body?: unknown) =>
+      app.request(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }, env);
+
+    let plan = (await (await get('/api/plan?weeks=4')).json()) as any;
+    expect(plan.today).toBe('2026-10-30');
+    expect(plan.periods[0]).toMatchObject({ type: 'barneuke', start: '2026-10-26', plannedKm: 0, doneKm: 0, canFill: true });
+    const short = plan.periods.find((p: any) => p.start === '2026-11-02');
+    expect(short).toMatchObject({ type: 'eneuke', days: 4, target: { scaled: true } });
+    expect(short.dates).toHaveLength(4);
+
+    const fill = await send('POST', '/api/plan/fill', { periodStart: '2026-11-02' });
+    const { created } = (await fill.json()) as any;
+    expect(created.length).toBeGreaterThan(1);
+    expect(created.every((s: any) => s.source === 'template' && s.date >= '2026-11-02' && s.date <= '2026-11-05')).toBe(true);
+
+    plan = (await (await get('/api/plan?weeks=4')).json()) as any;
+    const filled = plan.periods.find((p: any) => p.start === '2026-11-02');
+    expect(filled.plannedKm).toBeGreaterThanOrEqual(34.3);
+    expect(filled.plannedStatus).toBe('in-range');
+
+    // Filling again adds nothing: every day is taken.
+    expect(((await (await send('POST', '/api/plan/fill', { periodStart: '2026-11-02' })).json()) as any).created).toEqual([]);
+
+    const strength = await send('POST', '/api/plan/sessions', { date: '2026-10-30', kind: 'strength' });
+    expect(strength.status).toBe(201);
+    const s1 = (await strength.json()) as any;
+    expect(s1).toMatchObject({ title: 'Styrke', km: null, done: false, source: 'manual' });
+
+    const ticked = (await (await send('PATCH', `/api/plan/sessions/${s1.id}`, { done: true, details: 'Skråbrett 3×12' })).json()) as any;
+    expect(ticked).toMatchObject({ done: true, details: 'Skråbrett 3×12', kind: 'strength' });
+
+    const today = (await (await get('/api/today')).json()) as any;
+    expect(today.planned).toEqual([expect.objectContaining({ id: s1.id, done: true })]);
+    const week = (await (await get('/api/week?start=2026-10-26')).json()) as any;
+    expect(week.days[4].planned).toHaveLength(1);
+
+    expect((await send('DELETE', `/api/plan/sessions/${s1.id}`)).status).toBe(204);
+    expect((await send('DELETE', `/api/plan/sessions/${s1.id}`)).status).toBe(404);
+  });
+
+  it('plan rejects bad input', async () => {
+    const send = (method: string, path: string, body: unknown) =>
+      app.request(path, { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }, env);
+    expect((await send('POST', '/api/plan/sessions', { date: '2026-10-30', kind: 'nap' })).status).toBe(400);
+    expect((await send('POST', '/api/plan/sessions', { kind: 'easy' })).status).toBe(400);
+    expect((await send('POST', '/api/plan/sessions', { date: '2026-10-30', kind: 'easy', km: -1 })).status).toBe(400);
+    expect((await send('PATCH', '/api/plan/sessions/abc', { done: true })).status).toBe(400);
+    expect((await send('POST', '/api/plan/fill', {})).status).toBe(400);
+  });
+
+  it('plan needs the calendar', async () => {
+    const noCalendar = createApp({ now: () => NOW });
+    expect((await noCalendar.request('/api/plan', {}, env)).status).toBe(409);
+  });
+
   it('fails closed when Access is not configured', async () => {
     env.ALLOW_UNAUTHENTICATED = undefined;
     const res = await get('/api/today');

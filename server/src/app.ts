@@ -3,7 +3,7 @@ import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { AccessError, accessToken, verifyAccessJwt } from './access.js';
 import { addDays, diffDays, isIsoDate, mondayOf, todayOslo } from './dates.js';
-import type { Env } from './env.js';
+import type { AppEnv } from './context.js';
 import { GoogleCalendar, GoogleNotConnectedError } from './calendar/google.js';
 import { CalendarService, type CalendarSource, type EventCache, type Race } from './calendar/service.js';
 import { getLog, lastWeight, listLogs, upsertLog, type DailyLogPatch } from './log/repo.js';
@@ -14,6 +14,8 @@ import { kneeFlag } from './training/knee.js';
 import { periodVolume, type PeriodVolume } from './training/volume.js';
 import { buildWeek } from './training/week.js';
 import { bad, dateQuery, range } from './http.js';
+import { listSessions } from './plan/repo.js';
+import { planRoutes } from './routes/plan.js';
 
 export interface AppOptions {
   /** Overrides Google (tests). */
@@ -23,7 +25,6 @@ export interface AppOptions {
   now?: () => Date;
 }
 
-type AppEnv = { Bindings: Env; Variables: { google: GoogleCalendar; calendar: CalendarService } };
 
 
 function parsePatch(body: unknown): DailyLogPatch {
@@ -153,12 +154,23 @@ export function createApp(options: AppOptions = {}) {
     return c.json({ activities: await listActivities(c.env.DB, from, to) });
   });
 
+  // --- Plan (needs the calendar) -----------------------------------------
+  app.use('/plan/*', async (c, next) => {
+    if (!(await calendarConnected(c))) return c.json({ error: 'google_not_connected' }, 409);
+    return next();
+  });
+  app.route('/plan', planRoutes(now));
+
   // --- Week (Mon–Sun) -----------------------------------------------------
   app.get('/week', async (c) => {
     const db = c.env.DB;
     const start = mondayOf(dateQuery(c, 'start', todayOslo(now())));
     const end = addDays(start, 6);
-    const [logs, activities] = await Promise.all([listLogs(db, start, end), listActivities(db, start, end)]);
+    const [logs, activities, sessions] = await Promise.all([
+      listLogs(db, start, end),
+      listActivities(db, start, end),
+      listSessions(db, start, end),
+    ]);
     let calendarDays = null;
     let races: Race[] = [];
     if (await calendarConnected(c)) {
@@ -168,14 +180,14 @@ export function createApp(options: AppOptions = {}) {
         if (!(err instanceof GoogleNotConnectedError)) throw err;
       }
     }
-    return c.json(buildWeek({ anyDate: start, calendarDays, races, logs, activities }));
+    return c.json(buildWeek({ anyDate: start, calendarDays, races, logs, activities, sessions }));
   });
 
   // --- Today (aggregate for the morning view) -----------------------------
   app.get('/today', async (c) => {
     const db = c.env.DB;
     const today = todayOslo(now());
-    const [log, week, last, activities, syncedAt, fitness, cached, hidden] = await Promise.all([
+    const [log, week, last, activities, syncedAt, fitness, cached, hidden, planned] = await Promise.all([
       getLog(db, today),
       listLogs(db, addDays(today, -6), today),
       lastWeight(db, today),
@@ -184,6 +196,7 @@ export function createApp(options: AppOptions = {}) {
       latestWellness(db, today),
       countActivities(db),
       hiddenActivities(db),
+      listSessions(db, today, today),
     ]);
     const weights = week.flatMap((l) => (l.weightKg === null ? [] : [l.weightKg]));
     const weight = {
@@ -201,7 +214,7 @@ export function createApp(options: AppOptions = {}) {
       fitness,
       volume: null as PeriodVolume | null,
     };
-    const withoutCalendar = { date: today, log, weight, training, calendar: null, nextRace: null };
+    const withoutCalendar = { date: today, log, weight, training, planned, calendar: null, nextRace: null };
     if (!(await calendarConnected(c))) return c.json(withoutCalendar);
 
     try {

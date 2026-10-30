@@ -6,9 +6,11 @@ import type { Activity, Wellness } from '../../server/src/intervals/types';
 import type { KneeFlag } from '../../server/src/training/knee';
 import type { PeriodVolume } from '../../server/src/training/volume';
 import type { Week, WeekDay } from '../../server/src/training/week';
+import type { PlanDay, PlanPeriod } from '../../server/src/plan/overview';
+import type { PlannedSession, SessionKind, SessionPatch } from '../../server/src/plan/types';
 
 export { isRun, paceSecPerKm } from '../../server/src/intervals/types';
-export type { Activity, DailyLog, DayInfo, KneeFlag, PeriodVolume, PeriodWithTarget, Race, Week, WeekDay, WeekType, Wellness };
+export type { Activity, DailyLog, DayInfo, KneeFlag, PeriodVolume, PeriodWithTarget, PlanDay, PlanPeriod, PlannedSession, Race, SessionKind, SessionPatch, Week, WeekDay, WeekType, Wellness };
 
 export interface Training {
   configured: boolean;
@@ -25,6 +27,7 @@ export interface Today {
   log: DailyLog;
   weight: { last: { date: string; weightKg: number } | null; avg7: number | null; count7: number };
   training: Training;
+  planned: PlannedSession[];
   calendar: { day: DayInfo; period: PeriodWithTarget | null; periodDays: DayInfo[] } | null;
   nextRace: (Race & { inDays: number }) | null;
 }
@@ -40,7 +43,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
   });
-  const body = await res.json().catch(() => ({}));
+  const body = res.status === 204 ? {} : await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
   return body as T;
 }
@@ -56,5 +59,13 @@ export const api = {
     request<DailyLog>(`/api/log/${date}`, { method: 'PUT', body: JSON.stringify(patch) }),
   sync: () => request<{ activities: number; wellness: number; lastSyncAt: string }>('/api/sync', { method: 'POST' }),
   week: (start: string) => request<Week>(`/api/week?start=${start}`),
+  plan: (weeks = 8) => request<{ today: string; periods: PlanPeriod[] }>(`/api/plan?weeks=${weeks}`),
+  createSession: (session: SessionPatch & { date: string; kind: SessionKind }) =>
+    request<PlannedSession>('/api/plan/sessions', { method: 'POST', body: JSON.stringify(session) }),
+  updateSession: (id: number, patch: SessionPatch) =>
+    request<PlannedSession>(`/api/plan/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteSession: (id: number) => request<void>(`/api/plan/sessions/${id}`, { method: 'DELETE' }),
+  fillPeriod: (periodStart: string) =>
+    request<{ created: PlannedSession[] }>('/api/plan/fill', { method: 'POST', body: JSON.stringify({ periodStart }) }),
   activities: (from: string, to: string) => request<{ activities: Activity[] }>(`/api/activities?from=${from}&to=${to}`),
 };

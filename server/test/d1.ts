@@ -18,18 +18,20 @@ export function testD1(): D1Database {
     },
     all: async () => ({ results: db.prepare(sql).all(...args), success: true, meta: {} }),
     run: async () => {
-      db.prepare(sql).run(...args);
-      return { success: true, meta: {} };
+      const info = db.prepare(sql).run(...args);
+      return { success: true, meta: { changes: info.changes } };
     },
-    runSync: () => db.prepare(sql).run(...args),
+    runSync: () => {
+      const st = db.prepare(sql);
+      if (st.reader) return { results: st.all(...args), success: true, meta: {} };
+      st.run(...args);
+      return { results: [], success: true, meta: {} };
+    },
   });
 
   return {
     prepare: (sql: string) => statement(sql),
     // Like D1: all statements in one transaction.
-    batch: async (stmts: ReturnType<typeof statement>[]) => {
-      db.transaction(() => stmts.forEach((s) => s.runSync()))();
-      return stmts.map(() => ({ success: true, meta: {} }));
-    },
+    batch: async (stmts: ReturnType<typeof statement>[]) => db.transaction(() => stmts.map((s) => s.runSync()))(),
   } as unknown as D1Database;
 }

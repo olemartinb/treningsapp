@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { ArrowLeftRight, Baby, Check, Flag, TriangleAlert, X } from 'lucide-vue-next';
+import { ArrowLeftRight, Baby, Check, CircleDashed, Flag, TriangleAlert, X } from 'lucide-vue-next';
 import { isRun, paceSecPerKm, type WeekDay } from '../api';
 import { activityLabel, formatDecimal, formatPace, formatWeekdayDate } from '../format';
 
@@ -39,13 +39,20 @@ function detail(a: WeekDay['activities'][number]) {
 
     <p v-for="r in day.races" :key="r.title" class="race small"><Flag aria-hidden="true" /> {{ r.title }}</p>
 
+    <ul v-if="day.planned.length" class="plan">
+      <li v-for="s in day.planned" :key="s.id" class="small" :class="{ done: s.done }">
+        <Check v-if="s.done" aria-hidden="true" /><CircleDashed v-else aria-hidden="true" />
+        <span>{{ s.title }}<template v-if="s.km"> · {{ formatDecimal(s.km) }} km</template></span>
+      </li>
+    </ul>
+
     <ul v-if="day.activities.length" class="acts">
       <li v-for="a in day.activities" :key="a.id" class="small">
         <span>{{ detail(a) }}</span>
         <TriangleAlert v-if="a.kneeFlag" class="flag" :class="a.kneeFlag" aria-label="Løp uten bestått knetest" />
       </li>
     </ul>
-    <p v-else-if="isPast" class="rest small">Hvile</p>
+    <p v-else-if="isPast && !day.planned.length" class="rest small">Hvile</p>
   </li>
 </template>
 
@@ -111,4 +118,9 @@ function detail(a: WeekDay['activities'][number]) {
 .flag.missing { color: var(--warn); }
 .flag.failed { color: var(--bad); }
 .rest { margin: 4px 0 0; color: var(--faint); }
+.plan { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; color: var(--faint); }
+.plan li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.plan svg { flex: none; width: 13px; height: 13px; }
+.plan span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan .done { color: var(--ok); }
 </style>

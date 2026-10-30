@@ -5,6 +5,7 @@ import type { Race } from '../calendar/service.js';
 import type { DailyLog } from '../log/types.js';
 import { isRun, type Activity } from '../intervals/types.js';
 import { kneeFlag, type KneeFlag } from './knee.js';
+import type { PlannedSession } from '../plan/types.js';
 import { targetForDays, volumeStatus, type KmRange, type VolumeStatus } from './targets.js';
 
 export interface WeekDay {
@@ -17,6 +18,7 @@ export interface WeekDay {
   log: DailyLog | null;
   activities: (Activity & { kneeFlag: KneeFlag | null })[];
   runKm: number;
+  planned: PlannedSession[];
 }
 
 export interface Week {
@@ -39,6 +41,7 @@ export function buildWeek(input: {
   races: Race[];
   logs: DailyLog[];
   activities: Activity[];
+  sessions?: PlannedSession[];
 }): Week {
   const start = mondayOf(input.anyDate);
   const end = addDays(start, 6);
@@ -62,6 +65,7 @@ export function buildWeek(input: {
       log,
       activities,
       runKm,
+      planned: (input.sessions ?? []).filter((s) => s.date === date),
     };
   });
 

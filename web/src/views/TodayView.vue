@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from 'vue';
-import { ArrowLeftRight, Baby, CalendarDays, Clock, Flag, Lightbulb, Pin, RefreshCw, User } from 'lucide-vue-next';
-import { api, ApiError, isRun, type DailyLog, type Today } from '../api';
-import { WEEK_LABEL, dayBefore, formatKm, formatLongDate, formatShortDate, formatTime, formatWeekdayDate, greeting } from '../format';
+import { ArrowLeftRight, Baby, CalendarDays, Check, Clock, Flag, Lightbulb, Pin, RefreshCw, TriangleAlert, User } from 'lucide-vue-next';
+import { api, ApiError, isRun, type DailyLog, type PlannedSession, type Today } from '../api';
+import { SESSION_KINDS } from '../sessions';
+import { WEEK_LABEL, dayBefore, formatDecimal, formatKm, formatLongDate, formatShortDate, formatTime, formatWeekdayDate, greeting } from '../format';
 import { suggestSession } from '../suggest';
 import PageHeader from '../components/PageHeader.vue';
 import PeriodStrip from '../components/PeriodStrip.vue';
@@ -10,6 +11,8 @@ import KneeTestCard from '../components/KneeTestCard.vue';
 import WeightCard from '../components/WeightCard.vue';
 import VolumeBar from '../components/VolumeBar.vue';
 import ActivityList from '../components/ActivityList.vue';
+import SessionChip from '../components/SessionChip.vue';
+import SessionSheet from '../components/SessionSheet.vue';
 
 const BASE_KM = { barneuke: '25–35', eneuke: '60–68' } as const;
 /** Opening the app pulls new Garmin activities if the last sync is older than this. */
@@ -24,6 +27,7 @@ const error = ref<string | null>(null);
 const googleConfigured = ref(true);
 const syncing = ref(false);
 const syncError = ref<string | null>(null);
+const editing = ref<PlannedSession | null>(null);
 
 async function load() {
   try {
@@ -70,6 +74,18 @@ const flags = computed(() => (day.value?.flags ?? []).filter((f) => !(day.value?
 const suggestion = computed(() => (today.value ? suggestSession(day.value, today.value.log) : null));
 const training = computed(() => today.value?.training ?? null);
 const ranToday = computed(() => training.value?.activities.some(isRun) ?? false);
+const planned = computed(() => today.value?.planned ?? []);
+const plannedKm = computed(() => planned.value.reduce((sum, s) => sum + (SESSION_KINDS[s.kind].run && s.km ? s.km : 0), 0));
+const loggedKm = computed(() =>
+  (training.value?.activities ?? []).reduce((sum, a) => sum + (isRun(a) && a.distanceM ? a.distanceM / 1000 : 0), 0),
+);
+/** Hard rule: a failed knee test replaces planned runs. */
+const kneeBlocksRun = computed(() => today.value?.log.kneeOk === false && planned.value.some((s) => SESSION_KINDS[s.kind].run));
+
+async function toggleDone(s: PlannedSession) {
+  const updated = await api.updateSession(s.id, { done: !s.done }).catch(() => null);
+  if (updated && today.value) today.value.planned = today.value.planned.map((p) => (p.id === s.id ? updated : p));
+}
 
 // Tint the whole app with the current week type (kept when switching tabs).
 watchEffect(() => {
@@ -165,9 +181,37 @@ onMounted(init);
           </button>
         </div>
 
-        <ActivityList v-if="training?.activities.length" :activities="training.activities" />
+        <template v-if="planned.length">
+          <p class="label small">Planlagt</p>
+          <ul class="planned">
+            <li v-for="s in planned" :key="s.id">
+              <SessionChip :session="s" @open="editing = s" />
+              <button
+                class="tick"
+                :class="{ on: s.done }"
+                :aria-pressed="s.done"
+                :aria-label="s.done ? 'Merk som ikke gjort' : 'Merk som gjort'"
+                @click="toggleDone(s)"
+              >
+                <Check aria-hidden="true" />
+              </button>
+            </li>
+          </ul>
+          <p v-if="kneeBlocksRun" class="knee-swap small">
+            <TriangleAlert aria-hidden="true" />
+            Knetesten var ikke smertefri: bytt løpingen med spinning eller gange på mølle.
+          </p>
+        </template>
 
-        <template v-if="suggestion && !ranToday">
+        <template v-if="training?.activities.length">
+          <p class="label small">
+            Fra Garmin
+            <template v-if="plannedKm"> · {{ formatDecimal(loggedKm) }} av {{ formatDecimal(plannedKm) }} km planlagt</template>
+          </p>
+          <ActivityList :activities="training.activities" />
+        </template>
+
+        <template v-if="suggestion && !ranToday && !planned.length">
           <h3 :class="{ later: training?.activities.length }">{{ suggestion.title }}</h3>
           <p class="small muted">{{ suggestion.detail }}</p>
         </template>
@@ -203,6 +247,8 @@ onMounted(init);
     <div v-else-if="!error" class="skeleton" aria-busy="true">
       <div class="card" /><div class="card" /><div class="card" />
     </div>
+
+    <SessionSheet :session="editing" :date="null" @close="editing = null" @changed="load" />
   </div>
 </template>
 
@@ -280,6 +326,25 @@ p { margin: 0; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .later { margin-top: 16px; }
+.label { margin: 4px 0 8px; color: var(--faint); font-weight: 600; }
+.label:not(:first-of-type) { margin-top: 16px; }
+.planned { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.planned li { display: flex; gap: 8px; align-items: center; }
+.tick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--faint);
+}
+.tick svg { width: 18px; height: 18px; }
+.tick.on { background: var(--ok); border-color: transparent; color: var(--on-color); }
+.knee-swap { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 0; color: var(--bad); font-weight: 550; }
+.knee-swap svg { flex: none; width: 16px; height: 16px; margin-top: 2px; }
 .sync-error { color: var(--bad); }
 .hint { color: var(--warn); }
 .footnote { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--faint); }
