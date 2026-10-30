@@ -8,8 +8,8 @@ import { GoogleCalendar, GoogleNotConnectedError } from './calendar/google.js';
 import { CalendarService, type CalendarSource, type EventCache } from './calendar/service.js';
 import { getLog, lastWeight, listLogs, upsertLog, type DailyLogPatch } from './log/repo.js';
 import { IntervalsError, type IntervalsSource } from './intervals/client.js';
-import { latestWellness, listActivities } from './intervals/repo.js';
-import { intervalsFromEnv, lastSyncAt, syncRecent } from './intervals/sync.js';
+import { countActivities, latestWellness, listActivities } from './intervals/repo.js';
+import { hiddenActivities, intervalsFromEnv, lastSyncAt, syncRecent } from './intervals/sync.js';
 import { kneeFlag } from './training/knee.js';
 import { periodVolume, type PeriodVolume } from './training/volume.js';
 
@@ -164,13 +164,15 @@ export function createApp(options: AppOptions = {}) {
   app.get('/today', async (c) => {
     const db = c.env.DB;
     const today = todayOslo(now());
-    const [log, week, last, activities, syncedAt, fitness] = await Promise.all([
+    const [log, week, last, activities, syncedAt, fitness, cached, hidden] = await Promise.all([
       getLog(db, today),
       listLogs(db, addDays(today, -6), today),
       lastWeight(db, today),
       listActivities(db, today, today),
       lastSyncAt(db),
       latestWellness(db, today),
+      countActivities(db),
+      hiddenActivities(db),
     ]);
     const weights = week.flatMap((l) => (l.weightKg === null ? [] : [l.weightKg]));
     const weight = {
@@ -181,6 +183,9 @@ export function createApp(options: AppOptions = {}) {
     const training = {
       configured: Boolean(intervalsSource(c)),
       lastSyncAt: syncedAt,
+      /** All cached activities, and how many intervals.icu kept back in the last sync. */
+      cachedActivities: cached,
+      hiddenActivities: hidden,
       activities: activities.map((a) => ({ ...a, kneeFlag: kneeFlag(a, log) })),
       fitness,
       volume: null as PeriodVolume | null,

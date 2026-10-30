@@ -12,6 +12,8 @@ export type { Activity, DailyLog, DayInfo, KneeFlag, PeriodVolume, PeriodWithTar
 export interface Training {
   configured: boolean;
   lastSyncAt: string | null;
+  cachedActivities: number;
+  hiddenActivities: number;
   activities: (Activity & { kneeFlag: KneeFlag | null })[];
   fitness: Wellness | null;
   volume: PeriodVolume | null;

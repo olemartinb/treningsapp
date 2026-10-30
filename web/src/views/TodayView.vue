@@ -174,6 +174,14 @@ onMounted(init);
         </template>
 
         <p v-if="syncError" class="footnote small sync-error" role="alert">{{ syncError }}</p>
+        <p v-else-if="training?.hiddenActivities" class="footnote small hint">
+          {{ training.hiddenActivities }} økter i intervals.icu kom via Strava, og dem deler ikke intervals.icu med andre apper.
+          Øktene må komme direkte fra Garmin.
+        </p>
+        <p v-else-if="training?.configured && training.lastSyncAt && !training.cachedActivities" class="footnote small hint">
+          intervals.icu har ingen økter ennå. Har du nettopp koblet til Garmin, bruk «Import All Garmin Data» i intervals.icu
+          for å hente historikken.
+        </p>
         <p v-else-if="!training?.configured" class="footnote small">Garmin-økter vises her når intervals.icu er koblet til.</p>
       </section>
 
@@ -270,6 +278,7 @@ p { margin: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .later { margin-top: 16px; }
 .sync-error { color: var(--bad); }
+.hint { color: var(--warn); }
 .footnote { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--faint); }
 
 .race { display: flex; justify-content: space-between; align-items: center; gap: 16px; }

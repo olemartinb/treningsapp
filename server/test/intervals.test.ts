@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixture from './fixtures/intervals-activities.json' with { type: 'json' };
 import { IntervalsClient, IntervalsError, toActivity, toWellness, type IcuActivity, type IntervalsSource } from '../src/intervals/client.js';
 import { listActivities, latestWellness } from '../src/intervals/repo.js';
-import { BACKFILL_DAYS, RECENT_DAYS, nightlySync, syncRange, syncRecent } from '../src/intervals/sync.js';
+import { BACKFILL_DAYS, RECENT_DAYS, hiddenActivities, nightlySync, syncRange, syncRecent } from '../src/intervals/sync.js';
 import { paceSecPerKm, type Activity, type Wellness } from '../src/intervals/types.js';
 import { kneeFlag } from '../src/training/knee.js';
 import { periodVolume } from '../src/training/volume.js';
@@ -18,7 +18,7 @@ function fakeSource(acts: Activity[], wellness: Wellness[] = []) {
   const source: IntervalsSource = {
     activities: async (from, to) => {
       calls.push([from, to]);
-      return acts.filter((a) => a.date >= from && a.date <= to);
+      return { activities: acts.filter((a) => a.date >= from && a.date <= to), hidden: 0 };
     },
     wellness: async () => wellness,
   };
@@ -67,7 +67,8 @@ describe('IntervalsClient', () => {
     const fetchMock = vi.fn(async () => Response.json(raw));
     vi.stubGlobal('fetch', fetchMock);
     const result = await new IntervalsClient('secret-key', 'i123456').activities('2026-10-01', '2026-10-30');
-    expect(result).toHaveLength(5);
+    expect(result.activities).toHaveLength(5);
+    expect(result.hidden).toBe(1); // the Strava stub
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://intervals.icu/api/v1/athlete/i123456/activities?oldest=2026-10-01&newest=2026-10-30');
     expect((init.headers as Record<string, string>).Authorization).toBe(`Basic ${btoa('API_KEY:secret-key')}`);
@@ -84,7 +85,7 @@ describe('sync', () => {
     const db = testD1();
     const { source } = fakeSource(activities, [{ date: '2026-10-30', ctl: 50, atl: 60, weightKg: null, restingHr: null }]);
     const result = await syncRange(db, source, '2026-10-01', '2026-10-30', NOW);
-    expect(result).toMatchObject({ activities: 5, wellness: 1, lastSyncAt: NOW.toISOString() });
+    expect(result).toMatchObject({ activities: 5, hidden: 0, wellness: 1, lastSyncAt: NOW.toISOString() });
     expect(await listActivities(db, '2026-10-30', '2026-10-30')).toHaveLength(2);
     expect(await latestWellness(db, '2026-10-30')).toMatchObject({ ctl: 50, atl: 60 });
 
@@ -112,6 +113,13 @@ describe('sync', () => {
       [new Date(Date.parse('2026-10-30') - BACKFILL_DAYS * 864e5).toISOString().slice(0, 10), '2026-10-30'],
       [new Date(Date.parse('2026-10-30') - RECENT_DAYS * 864e5).toISOString().slice(0, 10), '2026-10-30'],
     ]);
+  });
+
+  it('remembers how many activities intervals.icu kept back', async () => {
+    const db = testD1();
+    const source: IntervalsSource = { activities: async () => ({ activities: [], hidden: 12 }), wellness: async () => [] };
+    expect(await syncRange(db, source, '2026-10-01', '2026-10-30', NOW)).toMatchObject({ activities: 0, hidden: 12 });
+    expect(await hiddenActivities(db)).toBe(12);
   });
 
   it('nightly sync does nothing without intervals secrets', async () => {

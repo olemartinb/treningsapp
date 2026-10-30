@@ -28,6 +28,10 @@ const fromRow = (r: ActivityRow): Activity => ({
   load: r.load,
 });
 
+export async function countActivities(db: D1Database): Promise<number> {
+  return (await db.prepare('SELECT count(*) AS n FROM activity').first<number>('n')) ?? 0;
+}
+
 export async function listActivities(db: D1Database, from: IsoDate, to: IsoDate): Promise<Activity[]> {
   const { results } = await db
     .prepare('SELECT * FROM activity WHERE date BETWEEN ? AND ? ORDER BY start_local')

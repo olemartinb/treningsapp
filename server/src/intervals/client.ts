@@ -4,8 +4,14 @@ import type { Activity, Wellness } from './types.js';
 
 const API = 'https://intervals.icu/api/v1';
 
+export interface ActivitiesResult {
+  activities: Activity[];
+  /** Activities intervals.icu lists but does not share via the API (e.g. imported from Strava). */
+  hidden: number;
+}
+
 export interface IntervalsSource {
-  activities(oldest: IsoDate, newest: IsoDate): Promise<Activity[]>;
+  activities(oldest: IsoDate, newest: IsoDate): Promise<ActivitiesResult>;
   wellness(oldest: IsoDate, newest: IsoDate): Promise<Wellness[]>;
 }
 
@@ -68,9 +74,10 @@ export class IntervalsClient implements IntervalsSource {
     private athleteId: string,
   ) {}
 
-  async activities(oldest: IsoDate, newest: IsoDate): Promise<Activity[]> {
+  async activities(oldest: IsoDate, newest: IsoDate): Promise<ActivitiesResult> {
     const raw = await this.get<IcuActivity[]>('/activities', { oldest, newest });
-    return raw.map(toActivity).filter((a): a is Activity => a !== null);
+    const activities = raw.map(toActivity).filter((a): a is Activity => a !== null);
+    return { activities, hidden: raw.length - activities.length };
   }
 
   async wellness(oldest: IsoDate, newest: IsoDate): Promise<Wellness[]> {

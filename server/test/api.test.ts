@@ -22,7 +22,7 @@ const app = createApp({
   now: () => NOW,
   calendarSource: { listEvents: async (name) => (name === 'Samvær' ? (fixture.items as CalEvent[]) : races) },
   intervalsSource: {
-    activities: async (from, to) => icuActivities.filter((a) => a.date >= from && a.date <= to),
+    activities: async (from, to) => ({ activities: icuActivities.filter((a) => a.date >= from && a.date <= to), hidden: 1 }),
     wellness: async () => [{ date: '2026-10-30', ctl: 48.2, atl: 55.9, weightKg: null, restingHr: 45 }],
   },
 });
@@ -100,14 +100,21 @@ describe('API', () => {
 
   it('sync pulls activities, and today shows them with knee flags and period volume', async () => {
     let body = (await (await get('/api/today')).json()) as any;
-    expect(body.training).toMatchObject({ configured: true, lastSyncAt: null, activities: [], volume: { km: 0, status: 'under' } });
+    expect(body.training).toMatchObject({
+      configured: true,
+      lastSyncAt: null,
+      cachedActivities: 0,
+      hiddenActivities: 0,
+      activities: [],
+      volume: { km: 0, status: 'under' },
+    });
 
     const sync = await app.request('/api/sync', { method: 'POST' }, env);
     expect(sync.status).toBe(200);
-    expect(await sync.json()).toMatchObject({ activities: 5, wellness: 1 });
+    expect(await sync.json()).toMatchObject({ activities: 5, hidden: 1, wellness: 1 });
 
     body = (await (await get('/api/today')).json()) as any;
-    expect(body.training.lastSyncAt).toBe(NOW.toISOString());
+    expect(body.training).toMatchObject({ lastSyncAt: NOW.toISOString(), cachedActivities: 5, hiddenActivities: 1 });
     expect(body.training.activities.map((a: any) => [a.type, a.kneeFlag])).toEqual([
       ['Run', 'missing'],
       ['WeightTraining', null],

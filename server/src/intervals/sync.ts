@@ -6,6 +6,7 @@ import { IntervalsClient, type IntervalsSource } from './client.js';
 import { deleteActivitiesExcept, upsertActivity, upsertWellness } from './repo.js';
 
 const LAST_SYNC_KEY = 'intervals.last_sync';
+const HIDDEN_KEY = 'intervals.hidden';
 /** History fetched on the very first sync. */
 export const BACKFILL_DAYS = 180;
 /** Window re-read on later syncs, so edits and late uploads are picked up. */
@@ -16,6 +17,7 @@ export interface SyncResult {
   from: IsoDate;
   to: IsoDate;
   activities: number;
+  hidden: number;
   wellness: number;
   lastSyncAt: string;
 }
@@ -28,8 +30,11 @@ export function intervalsFromEnv(env: Pick<Env, 'INTERVALS_API_KEY' | 'INTERVALS
 
 export const lastSyncAt = (db: D1Database) => kvGet(db, LAST_SYNC_KEY);
 
+/** Activities hidden from the API in the last synced window. */
+export const hiddenActivities = async (db: D1Database) => Number(await kvGet(db, HIDDEN_KEY)) || 0;
+
 export async function syncRange(db: D1Database, source: IntervalsSource, from: IsoDate, to: IsoDate, now: Date): Promise<SyncResult> {
-  const [activities, wellness] = await Promise.all([source.activities(from, to), source.wellness(from, to)]);
+  const [{ activities, hidden }, wellness] = await Promise.all([source.activities(from, to), source.wellness(from, to)]);
   const at = now.toISOString();
   await db.batch([
     ...activities.map((a) => upsertActivity(db, a, now)),
@@ -37,7 +42,10 @@ export async function syncRange(db: D1Database, source: IntervalsSource, from: I
     ...wellness.map((w) => upsertWellness(db, w, now)),
   ]);
   await kvSet(db, LAST_SYNC_KEY, at);
-  return { from, to, activities: activities.length, wellness: wellness.length, lastSyncAt: at };
+  await kvSet(db, HIDDEN_KEY, String(hidden));
+  const result = { from, to, activities: activities.length, hidden, wellness: wellness.length, lastSyncAt: at };
+  console.log('intervals sync', JSON.stringify(result));
+  return result;
 }
 
 /** Backfills on the first run, otherwise re-reads the recent window. */
