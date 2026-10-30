@@ -5,9 +5,8 @@ import { activityLabel, formatDistance, formatDuration, formatPace } from '../fo
 
 defineProps<{ activities: (Activity & { kneeFlag: KneeFlag | null })[] }>();
 
-const RIDES = ['Ride', 'VirtualRide'];
 const icon = (type: string) =>
-  isRun({ type }) ? Footprints : RIDES.includes(type) ? Bike : type === 'WeightTraining' ? Dumbbell : ActivityIcon;
+  isRun({ type }) ? Footprints : type.endsWith('Ride') ? Bike : type === 'WeightTraining' ? Dumbbell : ActivityIcon;
 function pace(a: Activity) {
   const sec = isRun(a) ? paceSecPerKm(a) : null;
   return sec === null ? null : formatPace(sec);
