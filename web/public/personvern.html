@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personvern – Treningsapp</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0 auto;
+        max-width: 640px;
+        padding: 32px 16px 64px;
+        font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        background: light-dark(#f5f6f8, #0b0d12);
+        color: light-dark(#14171c, #eef0f3);
+      }
+      h1 { font-size: 28px; letter-spacing: -0.02em; margin: 0 0 4px; }
+      h2 { font-size: 18px; margin: 28px 0 4px; }
+      p, li { color: light-dark(#3d4550, #b8c0cb); }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <h1>Personvern</h1>
+    <p>Treningsapp er en privat treningsdagbok for én person, eieren. Ingen andre har tilgang.</p>
+
+    <h2>Google Kalender</h2>
+    <p>
+      Appen ber om <strong>lesetilgang</strong> til Google Kalender og leser kun kalenderne «Samvær» og «Løp / trening»
+      for å vise uketype (barneuke/eneuke), bytter og løp. Appen endrer eller sletter aldri noe i kalenderen.
+      Bruken av data fra Google følger
+      <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+      inkludert kravene om begrenset bruk (Limited Use).
+    </p>
+
+    <h2>Hva lagres</h2>
+    <ul>
+      <li>En tilgangsnøkkel fra Google (refresh token), lagret kryptert hos Cloudflare.</li>
+      <li>Daglig knetest og vekt som eieren selv registrerer.</li>
+    </ul>
+    <p>Data deles ikke med, selges ikke til og brukes ikke av noen andre, og brukes ikke til reklame eller AI-trening.</p>
+
+    <h2>Sletting</h2>
+    <p>
+      Tilgangen til kalenderen kan trekkes tilbake når som helst på
+      <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+    </p>
+
+    <h2>Kontakt</h2>
+    <p>Ole-Martin Bratteberg · <a href="mailto:olemartinbratteberg@gmail.com">olemartinbratteberg@gmail.com</a></p>
+  </body>
+</html>
