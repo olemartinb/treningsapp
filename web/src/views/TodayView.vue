@@ -161,8 +161,7 @@ onMounted(init);
           >
             <RefreshCw :class="{ spin: syncing }" aria-hidden="true" />
             <template v-if="syncing">Henter …</template>
-            <template v-else-if="training.lastSyncAt">{{ formatTime(training.lastSyncAt) }}</template>
-            <template v-else>Hent</template>
+            <template v-else>Oppdater<template v-if="training.lastSyncAt"> · {{ formatTime(training.lastSyncAt) }}</template></template>
           </button>
         </div>
 
@@ -265,14 +264,18 @@ p { margin: 0; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: -6px -8px 0 0;
-  padding: 6px 10px;
-  border: 0;
+  margin: -8px -6px 0 0;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: none;
-  color: var(--faint);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 550;
   font-variant-numeric: tabular-nums;
+  transition: transform 0.15s var(--ease);
 }
+.sync:active:not(:disabled) { transform: scale(0.96); }
 .sync svg { width: 15px; height: 15px; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
