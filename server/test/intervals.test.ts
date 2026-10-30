@@ -115,6 +115,18 @@ describe('sync', () => {
     ]);
   });
 
+  it('keeps backfilling while intervals.icu is still empty', async () => {
+    const db = testD1();
+    const backfillFrom = new Date(Date.parse('2026-10-30') - BACKFILL_DAYS * 864e5).toISOString().slice(0, 10);
+    const recentFrom = new Date(Date.parse('2026-10-30') - RECENT_DAYS * 864e5).toISOString().slice(0, 10);
+    const empty = fakeSource([]);
+    await syncRecent(db, empty.source, NOW);
+    const later = fakeSource(activities);
+    await syncRecent(db, later.source, NOW);
+    await syncRecent(db, later.source, NOW);
+    expect([...empty.calls, ...later.calls].map(([from]) => from)).toEqual([backfillFrom, backfillFrom, recentFrom]);
+  });
+
   it('remembers how many activities intervals.icu kept back', async () => {
     const db = testD1();
     const source: IntervalsSource = { activities: async () => ({ activities: [], hidden: 12 }), wellness: async () => [] };

@@ -7,7 +7,9 @@ import { deleteActivitiesExcept, upsertActivity, upsertWellness } from './repo.j
 
 const LAST_SYNC_KEY = 'intervals.last_sync';
 const HIDDEN_KEY = 'intervals.hidden';
-/** History fetched on the very first sync. */
+/** Set once a backfill has actually returned activities (an empty account doesn't count). */
+const BACKFILLED_KEY = 'intervals.backfilled_at';
+/** History fetched until a backfill has found something. */
 export const BACKFILL_DAYS = 180;
 /** Window re-read on later syncs, so edits and late uploads are picked up. */
 export const RECENT_DAYS = 21;
@@ -29,6 +31,7 @@ export function intervalsFromEnv(env: Pick<Env, 'INTERVALS_API_KEY' | 'INTERVALS
 }
 
 export const lastSyncAt = (db: D1Database) => kvGet(db, LAST_SYNC_KEY);
+const backfilled = async (db: D1Database) => (await kvGet(db, BACKFILLED_KEY)) !== null;
 
 /** Activities hidden from the API in the last synced window. */
 export const hiddenActivities = async (db: D1Database) => Number(await kvGet(db, HIDDEN_KEY)) || 0;
@@ -48,17 +51,18 @@ export async function syncRange(db: D1Database, source: IntervalsSource, from: I
   return result;
 }
 
-/** Backfills on the first run, otherwise re-reads the recent window. */
-export async function syncRecent(db: D1Database, source: IntervalsSource, now: Date, days?: number): Promise<SyncResult> {
+/** Backfills until history has been found, otherwise re-reads the recent window. */
+export async function syncRecent(db: D1Database, source: IntervalsSource, now: Date, recentDays = RECENT_DAYS): Promise<SyncResult> {
   const today = todayOslo(now);
-  const window = days ?? ((await lastSyncAt(db)) ? RECENT_DAYS : BACKFILL_DAYS);
-  return syncRange(db, source, addDays(today, -window), today, now);
+  const isBackfill = !(await backfilled(db));
+  const result = await syncRange(db, source, addDays(today, -(isBackfill ? BACKFILL_DAYS : recentDays)), today, now);
+  if (isBackfill && result.activities > 0) await kvSet(db, BACKFILLED_KEY, result.lastSyncAt);
+  return result;
 }
 
 /** Cron Trigger entry point. */
 export async function nightlySync(env: Env, now = new Date()): Promise<SyncResult | null> {
   const source = intervalsFromEnv(env);
   if (!source) return null;
-  const backfilled = Boolean(await lastSyncAt(env.DB));
-  return syncRecent(env.DB, source, now, backfilled ? NIGHTLY_DAYS : BACKFILL_DAYS);
+  return syncRecent(env.DB, source, now, NIGHTLY_DAYS);
 }
