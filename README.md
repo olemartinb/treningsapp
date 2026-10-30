@@ -70,6 +70,8 @@ A Mon–Sun week spanning a handover blends both types day by day.
 | GET | `/api/calendar/races?from&to` | Races from "Løp / trening" |
 | GET | `/api/log?from&to` · `/api/log/:date` | Knee test + weight |
 | PUT | `/api/log/:date` | `{ kneeOk?, kneeNote?, weightKg? }` (partial update) |
+| POST | `/api/sync` | Pull activities + wellness from intervals.icu (backfills 180 days the first time) |
+| GET | `/api/activities?from&to` | Cached activities |
 | GET | `/api/auth/google/status` · `/start` · `/callback`, POST `/disconnect` | OAuth |
 
 ## Status
@@ -77,7 +79,7 @@ A Mon–Sun week spanning a handover blends both types day by day.
 - [x] 1. Scaffold Vue + Worker API + D1 on Cloudflare
 - [x] 2. Google Calendar OAuth + week-type resolver (tested against real-shaped events)
 - [x] 3. Knee test + weight log (Today view)
-- [ ] 4. intervals.icu sync + activity cache (nightly via Cron Trigger)
+- [x] 4. intervals.icu sync + activity cache (on open when stale, nightly via Cron Trigger)
 - [ ] 5. Week and Today views (planned vs. logged, run-without-knee-test flags)
 - [ ] 6. Plan view
 - [ ] 7. Progress charts
