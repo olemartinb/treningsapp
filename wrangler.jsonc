@@ -24,6 +24,8 @@
     "ACCESS_TEAM_DOMAIN": "olemartin.cloudflareaccess.com",
     "ACCESS_AUD": "44a2bc5e3d77a83b48c8854966f0aa7ee1695ba54c3628e340b46794aafb649f"
   },
+  // Nightly intervals.icu sync, 02:17 UTC (03:17/04:17 in Oslo).
+  "triggers": { "crons": ["17 2 * * *"] },
   // Only the Access-protected workers.dev URL; no per-version preview URLs.
   "preview_urls": false,
   // Secrets (wrangler secret put): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, INTERVALS_API_KEY, INTERVALS_ATHLETE_ID

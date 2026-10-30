@@ -1,5 +1,5 @@
 // In-memory stand-in for D1 backed by better-sqlite3, with the real migrations applied.
-// Covers the subset of the D1 API the app uses (prepare/bind/first/all/run).
+// Covers the subset of the D1 API the app uses (prepare/bind/first/all/run/batch).
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
@@ -21,7 +21,15 @@ export function testD1(): D1Database {
       db.prepare(sql).run(...args);
       return { success: true, meta: {} };
     },
+    runSync: () => db.prepare(sql).run(...args),
   });
 
-  return { prepare: (sql: string) => statement(sql) } as unknown as D1Database;
+  return {
+    prepare: (sql: string) => statement(sql),
+    // Like D1: all statements in one transaction.
+    batch: async (stmts: ReturnType<typeof statement>[]) => {
+      db.transaction(() => stmts.forEach((s) => s.runSync()))();
+      return stmts.map(() => ({ success: true, meta: {} }));
+    },
+  } as unknown as D1Database;
 }

@@ -7,10 +7,17 @@ import type { Env } from './env.js';
 import { GoogleCalendar, GoogleNotConnectedError } from './calendar/google.js';
 import { CalendarService, type CalendarSource, type EventCache } from './calendar/service.js';
 import { getLog, lastWeight, listLogs, upsertLog, type DailyLogPatch } from './log/repo.js';
+import { IntervalsError, type IntervalsSource } from './intervals/client.js';
+import { latestWellness, listActivities } from './intervals/repo.js';
+import { intervalsFromEnv, lastSyncAt, syncRecent } from './intervals/sync.js';
+import { kneeFlag } from './training/knee.js';
+import { periodVolume, type PeriodVolume } from './training/volume.js';
 
 export interface AppOptions {
   /** Overrides Google (tests). */
   calendarSource?: CalendarSource;
+  /** Overrides intervals.icu (tests). */
+  intervalsSource?: IntervalsSource;
   now?: () => Date;
 }
 
@@ -45,6 +52,10 @@ export function createApp(options: AppOptions = {}) {
 
   app.onError((err, c) => {
     if (err instanceof GoogleNotConnectedError) return c.json({ error: 'google_not_connected' }, 409);
+    if (err instanceof IntervalsError) {
+      console.error(err.message);
+      return c.json({ error: err.status === 401 || err.status === 403 ? 'intervals_auth_failed' : 'intervals_unavailable' }, 502);
+    }
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
     console.error(err);
     return c.json({ error: 'Internal error' }, 500);
@@ -77,6 +88,7 @@ export function createApp(options: AppOptions = {}) {
   });
 
   const calendarConnected = async (c: Context<AppEnv>) => Boolean(options.calendarSource) || (await c.var.google.connected());
+  const intervalsSource = (c: Context<AppEnv>) => options.intervalsSource ?? intervalsFromEnv(c.env);
 
   app.get('/health', (c) => c.json({ ok: true, today: todayOslo(now()) }));
 
@@ -136,18 +148,44 @@ export function createApp(options: AppOptions = {}) {
     return c.json(await upsertLog(c.env.DB, date, patch, now()));
   });
 
+  // --- intervals.icu ------------------------------------------------------
+  app.post('/sync', async (c) => {
+    const source = intervalsSource(c);
+    if (!source) return c.json({ error: 'intervals_not_configured' }, 409);
+    return c.json(await syncRecent(c.env.DB, source, now()));
+  });
+
+  app.get('/activities', async (c) => {
+    const { from, to } = range(c);
+    return c.json({ activities: await listActivities(c.env.DB, from, to) });
+  });
+
   // --- Today (aggregate for the morning view) -----------------------------
   app.get('/today', async (c) => {
     const db = c.env.DB;
     const today = todayOslo(now());
-    const [log, week, last] = await Promise.all([getLog(db, today), listLogs(db, addDays(today, -6), today), lastWeight(db, today)]);
+    const [log, week, last, activities, syncedAt, fitness] = await Promise.all([
+      getLog(db, today),
+      listLogs(db, addDays(today, -6), today),
+      lastWeight(db, today),
+      listActivities(db, today, today),
+      lastSyncAt(db),
+      latestWellness(db, today),
+    ]);
     const weights = week.flatMap((l) => (l.weightKg === null ? [] : [l.weightKg]));
     const weight = {
       last,
       avg7: weights.length ? Math.round((weights.reduce((a, b) => a + b, 0) / weights.length) * 10) / 10 : null,
       count7: weights.length,
     };
-    const withoutCalendar = { date: today, log, weight, calendar: null, nextRace: null };
+    const training = {
+      configured: Boolean(intervalsSource(c)),
+      lastSyncAt: syncedAt,
+      activities: activities.map((a) => ({ ...a, kneeFlag: kneeFlag(a, log) })),
+      fitness,
+      volume: null as PeriodVolume | null,
+    };
+    const withoutCalendar = { date: today, log, weight, training, calendar: null, nextRace: null };
     if (!(await calendarConnected(c))) return c.json(withoutCalendar);
 
     try {
@@ -158,8 +196,9 @@ export function createApp(options: AppOptions = {}) {
       // Whole current period, for the day strip.
       const period = periods[0] ?? null;
       const periodDays = period ? (await c.var.calendar.days(period.start, addDays(period.end, -1))).days : [];
+      if (period) training.volume = periodVolume(await listActivities(db, period.start, addDays(period.end, -1)), period, period.target);
       const nextRace = races[0] ? { ...races[0], inDays: diffDays(today, races[0].date) } : null;
-      return c.json({ date: today, log, weight, calendar: { day: days[0], period, periodDays }, nextRace });
+      return c.json({ ...withoutCalendar, calendar: { day: days[0], period, periodDays }, nextRace });
     } catch (err) {
       // Token revoked since the check above: the view still works for knee/weight.
       if (err instanceof GoogleNotConnectedError) return c.json(withoutCalendar);

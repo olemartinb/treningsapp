@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ArrowLeftRight } from 'lucide-vue-next';
 import type { DayInfo } from '../api';
-import { weekdayLetter } from '../format';
+import { formatDecimal, weekdayLetter } from '../format';
 
-defineProps<{ days: DayInfo[]; today: string }>();
+defineProps<{ days: DayInfo[]; today: string; kmByDate?: Record<string, number> }>();
 </script>
 
 <template>
@@ -17,6 +17,7 @@ defineProps<{ days: DayInfo[]; today: string }>();
     >
       <span class="wd">{{ weekdayLetter(d.date) }}</span>
       <span class="dn num">{{ Number(d.date.slice(8)) }}</span>
+      <span class="km num">{{ kmByDate?.[d.date] ? formatDecimal(kmByDate[d.date]!) : '' }}</span>
       <span class="mark">
         <ArrowLeftRight v-if="d.handover" aria-hidden="true" />
         <i v-else-if="d.kidsHomeAllDay" class="dot" />
@@ -48,6 +49,8 @@ li {
 .wd { font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; }
 .dn { font-size: 15px; font-weight: 600; }
 .past .dn { color: var(--muted); }
+.km { min-height: 13px; font-size: 10.5px; font-weight: 600; color: var(--week); line-height: 1.2; }
+.today .km { color: var(--on-color); }
 .today { background: var(--week); color: var(--on-color); }
 .today .wd { color: color-mix(in oklch, var(--on-color) 65%, transparent); }
 .today .dn { color: var(--on-color); }

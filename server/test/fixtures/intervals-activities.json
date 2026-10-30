@@ -1,0 +1,11 @@
+{
+  "_note": "Real-shaped GET /api/v1/athlete/{id}/activities response (fields trimmed to those used, values invented).",
+  "items": [
+    { "id": "i90000001", "start_date_local": "2026-10-26T06:02:11", "type": "Run", "name": "Morgentur", "distance": 7412.3, "moving_time": 2350, "elapsed_time": 2391, "average_heartrate": 141, "max_heartrate": 156, "icu_training_load": 38, "source": "GARMIN_CONNECT" },
+    { "id": "i90000002", "start_date_local": "2026-10-28T20:15:40", "type": "VirtualRun", "name": "Mølle motbakke", "distance": 6100, "moving_time": 2700, "average_heartrate": 158, "max_heartrate": 178, "icu_training_load": 61, "source": "GARMIN_CONNECT" },
+    { "id": "i90000003", "start_date_local": "2026-10-29T20:30:00", "type": "VirtualRide", "name": "Spinning 4x8", "distance": 24000, "moving_time": 3300, "average_heartrate": 150, "icu_training_load": 70, "source": "GARMIN_CONNECT" },
+    { "id": "i90000004", "start_date_local": "2026-10-30T06:05:00", "type": "Run", "name": "Rolig", "distance": 8020, "moving_time": 2580, "average_heartrate": 139, "max_heartrate": 151, "icu_training_load": 40, "source": "GARMIN_CONNECT" },
+    { "id": "i90000005", "start_date_local": "2026-10-30T19:00:00", "type": "WeightTraining", "name": "Styrke", "distance": null, "moving_time": 2400, "source": "GARMIN_CONNECT" },
+    { "id": "i90000006", "start_date_local": "2026-10-25T10:00:00", "type": "Run", "_note": "STRAVA activities are not available via the API", "source": "STRAVA" }
+  ]
+}

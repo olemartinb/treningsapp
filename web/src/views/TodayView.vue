@@ -1,19 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from 'vue';
-import { ArrowLeftRight, Baby, CalendarDays, Clock, Flag, Lightbulb, Pin, User } from 'lucide-vue-next';
-import { api, ApiError, type DailyLog, type Today } from '../api';
-import { WEEK_LABEL, dayBefore, formatKm, formatLongDate, formatShortDate, formatWeekdayDate, greeting } from '../format';
+import { ArrowLeftRight, Baby, CalendarDays, Clock, Flag, Lightbulb, Pin, RefreshCw, User } from 'lucide-vue-next';
+import { api, ApiError, isRun, type DailyLog, type Today } from '../api';
+import { WEEK_LABEL, dayBefore, formatKm, formatLongDate, formatShortDate, formatTime, formatWeekdayDate, greeting } from '../format';
 import { suggestSession } from '../suggest';
 import PageHeader from '../components/PageHeader.vue';
 import PeriodStrip from '../components/PeriodStrip.vue';
 import KneeTestCard from '../components/KneeTestCard.vue';
 import WeightCard from '../components/WeightCard.vue';
+import VolumeBar from '../components/VolumeBar.vue';
+import ActivityList from '../components/ActivityList.vue';
 
 const BASE_KM = { barneuke: '25–35', eneuke: '60–68' } as const;
+/** Opening the app pulls new Garmin activities if the last sync is older than this. */
+const SYNC_STALE_MS = 10 * 60_000;
+const SYNC_ERRORS: Record<string, string> = {
+  intervals_auth_failed: 'intervals.icu avviste nøkkelen. Sjekk API-nøkkel og athlete ID.',
+  intervals_unavailable: 'intervals.icu svarer ikke akkurat nå.',
+};
 
 const today = ref<Today | null>(null);
 const error = ref<string | null>(null);
 const googleConfigured = ref(true);
+const syncing = ref(false);
+const syncError = ref<string | null>(null);
 
 async function load() {
   try {
@@ -23,6 +33,25 @@ async function load() {
   } catch (e) {
     error.value = e instanceof ApiError ? `Feil fra serveren: ${e.message}` : 'Får ikke kontakt med serveren';
   }
+}
+
+async function sync() {
+  syncing.value = true;
+  syncError.value = null;
+  try {
+    await api.sync();
+    await load();
+  } catch (e) {
+    syncError.value = e instanceof ApiError ? (SYNC_ERRORS[e.code] ?? `Synk feilet: ${e.code}`) : 'Synk feilet';
+  } finally {
+    syncing.value = false;
+  }
+}
+
+async function init() {
+  await load();
+  const t = today.value?.training;
+  if (t?.configured && (!t.lastSyncAt || Date.now() - Date.parse(t.lastSyncAt) > SYNC_STALE_MS)) await sync();
 }
 
 function onSaved(log: DailyLog) {
@@ -39,12 +68,14 @@ const dayNo = computed(() => {
 });
 const flags = computed(() => (day.value?.flags ?? []).filter((f) => !(day.value?.handover && /^bytte/i.test(f.title))));
 const suggestion = computed(() => (today.value ? suggestSession(day.value, today.value.log) : null));
+const training = computed(() => today.value?.training ?? null);
+const ranToday = computed(() => training.value?.activities.some(isRun) ?? false);
 
 // Tint the whole app with the current week type (kept when switching tabs).
 watchEffect(() => {
   if (day.value?.type) document.documentElement.dataset.week = day.value.type;
 });
-onMounted(load);
+onMounted(init);
 </script>
 
 <template>
@@ -74,18 +105,25 @@ onMounted(load);
         </div>
 
         <template v-if="period">
-          <p class="target">
+          <template v-if="training?.volume">
+            <p class="target">
+              <span class="num">{{ formatKm(training.volume.km) }}</span>
+              <span class="unit">av {{ formatKm(period.target.min) }}–{{ formatKm(period.target.max) }} km</span>
+            </p>
+            <VolumeBar :volume="training.volume" :target="period.target" />
+          </template>
+          <p v-else class="target">
             <span class="num">{{ formatKm(period.target.min) }}–{{ formatKm(period.target.max) }}</span>
             <span class="unit">km</span>
           </p>
           <p class="small muted sub">
-            Mål {{ formatShortDate(period.start) }} – {{ formatShortDate(dayBefore(period.end)) }}
+            {{ formatShortDate(period.start) }} – {{ formatShortDate(dayBefore(period.end)) }}
             <template v-if="period.provisional"> · foreløpig</template>
           </p>
           <p v-if="period.target.scaled" class="scaled small">
             {{ period.days < 7 ? 'Kort' : 'Lang' }} periode, {{ period.days }} dager · skalert fra {{ BASE_KM[period.type] }} km/uke
           </p>
-          <PeriodStrip :days="today.calendar.periodDays" :today="today.date" />
+          <PeriodStrip :days="today.calendar.periodDays" :today="today.date" :km-by-date="training?.volume?.kmByDate" />
         </template>
 
         <ul v-if="day && (day.handover || flags.length)" class="flags">
@@ -111,11 +149,32 @@ onMounted(load);
       <KneeTestCard class="rise" style="--i: 2" :log="today.log" @saved="onSaved" />
       <WeightCard class="rise" style="--i: 3" :log="today.log" :weight="today.weight" @saved="onSaved" />
 
-      <section v-if="suggestion" class="card rise" style="--i: 4">
-        <p class="eyebrow"><Lightbulb aria-hidden="true" /> Dagens økt</p>
-        <h3>{{ suggestion.title }}</h3>
-        <p class="small muted">{{ suggestion.detail }}</p>
-        <p class="footnote small">Garmin-økter vises her når intervals.icu er koblet til.</p>
+      <section class="card rise" style="--i: 4">
+        <div class="session-head">
+          <p class="eyebrow"><Lightbulb aria-hidden="true" /> Dagens økt</p>
+          <button
+            v-if="training?.configured"
+            class="sync small"
+            :disabled="syncing"
+            aria-label="Hent nye økter fra Garmin"
+            @click="sync"
+          >
+            <RefreshCw :class="{ spin: syncing }" aria-hidden="true" />
+            <template v-if="syncing">Henter …</template>
+            <template v-else-if="training.lastSyncAt">{{ formatTime(training.lastSyncAt) }}</template>
+            <template v-else>Hent</template>
+          </button>
+        </div>
+
+        <ActivityList v-if="training?.activities.length" :activities="training.activities" />
+
+        <template v-if="suggestion && !ranToday">
+          <h3 :class="{ later: training?.activities.length }">{{ suggestion.title }}</h3>
+          <p class="small muted">{{ suggestion.detail }}</p>
+        </template>
+
+        <p v-if="syncError" class="footnote small sync-error" role="alert">{{ syncError }}</p>
+        <p v-else-if="!training?.configured" class="footnote small">Garmin-økter vises her når intervals.icu er koblet til.</p>
       </section>
 
       <section v-if="today.nextRace" class="card race rise" style="--i: 5">
@@ -193,6 +252,24 @@ p { margin: 0; }
 .flags .two { display: grid; }
 .flags small { color: var(--muted); font-size: 13px; }
 
+.session-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px -8px 0 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.sync svg { width: 15px; height: 15px; }
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.later { margin-top: 16px; }
+.sync-error { color: var(--bad); }
 .footnote { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--faint); }
 
 .race { display: flex; justify-content: space-between; align-items: center; gap: 16px; }

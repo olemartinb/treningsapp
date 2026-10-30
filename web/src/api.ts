@@ -2,13 +2,26 @@
 import type { DayInfo, WeekType } from '../../server/src/calendar/kidWeeks';
 import type { PeriodWithTarget, Race } from '../../server/src/calendar/service';
 import type { DailyLog, DailyLogPatch } from '../../server/src/log/types';
+import type { Activity, Wellness } from '../../server/src/intervals/types';
+import type { KneeFlag } from '../../server/src/training/knee';
+import type { PeriodVolume } from '../../server/src/training/volume';
 
-export type { DailyLog, DayInfo, PeriodWithTarget, Race, WeekType };
+export { isRun, paceSecPerKm } from '../../server/src/intervals/types';
+export type { Activity, DailyLog, DayInfo, KneeFlag, PeriodVolume, PeriodWithTarget, Race, WeekType, Wellness };
+
+export interface Training {
+  configured: boolean;
+  lastSyncAt: string | null;
+  activities: (Activity & { kneeFlag: KneeFlag | null })[];
+  fitness: Wellness | null;
+  volume: PeriodVolume | null;
+}
 
 export interface Today {
   date: string;
   log: DailyLog;
   weight: { last: { date: string; weightKg: number } | null; avg7: number | null; count7: number };
+  training: Training;
   calendar: { day: DayInfo; period: PeriodWithTarget | null; periodDays: DayInfo[] } | null;
   nextRace: (Race & { inDays: number }) | null;
 }
@@ -38,4 +51,6 @@ export const api = {
   logs: (from: string, to: string) => request<{ logs: DailyLog[] }>(`/api/log?from=${from}&to=${to}`),
   saveLog: (date: string, patch: DailyLogPatch) =>
     request<DailyLog>(`/api/log/${date}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  sync: () => request<{ activities: number; wellness: number; lastSyncAt: string }>('/api/sync', { method: 'POST' }),
+  activities: (from: string, to: string) => request<{ activities: Activity[] }>(`/api/activities?from=${from}&to=${to}`),
 };

@@ -50,3 +50,28 @@ export function greeting(now = new Date()): string {
 
 /** One decimal with a Norwegian comma, no unit. */
 export const formatDecimal = (n: number) => n.toFixed(1).replace('.', ',');
+
+/** Seconds → 'h:mm:ss' or 'mm:ss'. */
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.round(totalSeconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+/** Metres → km with one decimal and a Norwegian comma. */
+export const formatDistance = (m: number) => `${formatDecimal(m / 1000)} km`;
+
+const ACTIVITY_LABEL: Record<string, string> = {
+  Run: 'Løping',
+  TrailRun: 'Terrengløp',
+  VirtualRun: 'Mølle',
+  Ride: 'Sykkel',
+  VirtualRide: 'Spinning',
+  WeightTraining: 'Styrke',
+  Walk: 'Gange',
+  Hike: 'Tur',
+  Workout: 'Trening',
+};
+export const activityLabel = (type: string) => ACTIVITY_LABEL[type] ?? type;

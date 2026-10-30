@@ -4,6 +4,11 @@ import { createApp } from '../src/app.js';
 import type { CalEvent } from '../src/calendar/kidWeeks.js';
 import type { Env } from '../src/env.js';
 import { testD1 } from './d1.js';
+import intervalsFixture from './fixtures/intervals-activities.json' with { type: 'json' };
+import { IntervalsError, toActivity, type IcuActivity } from '../src/intervals/client.js';
+import type { Activity } from '../src/intervals/types.js';
+
+const icuActivities = (intervalsFixture.items as IcuActivity[]).map(toActivity).filter((a): a is Activity => a !== null);
 
 const races: CalEvent[] = [
   { summary: 'Rotevatnet rundt', start: { date: '2026-10-25' }, end: { date: '2026-10-26' } },
@@ -16,6 +21,10 @@ const NOW = new Date('2026-10-30T05:15:00Z');
 const app = createApp({
   now: () => NOW,
   calendarSource: { listEvents: async (name) => (name === 'Samvær' ? (fixture.items as CalEvent[]) : races) },
+  intervalsSource: {
+    activities: async (from, to) => icuActivities.filter((a) => a.date >= from && a.date <= to),
+    wellness: async () => [{ date: '2026-10-30', ctl: 48.2, atl: 55.9, weightKg: null, restingHr: 45 }],
+  },
 });
 
 let env: Env;
@@ -87,6 +96,50 @@ describe('API', () => {
 
   it('rejects an invalid range', async () => {
     expect((await get('/api/calendar/days?from=2026-11-08&to=2026-11-02')).status).toBe(400);
+  });
+
+  it('sync pulls activities, and today shows them with knee flags and period volume', async () => {
+    let body = (await (await get('/api/today')).json()) as any;
+    expect(body.training).toMatchObject({ configured: true, lastSyncAt: null, activities: [], volume: { km: 0, status: 'under' } });
+
+    const sync = await app.request('/api/sync', { method: 'POST' }, env);
+    expect(sync.status).toBe(200);
+    expect(await sync.json()).toMatchObject({ activities: 5, wellness: 1 });
+
+    body = (await (await get('/api/today')).json()) as any;
+    expect(body.training.lastSyncAt).toBe(NOW.toISOString());
+    expect(body.training.activities.map((a: any) => [a.type, a.kneeFlag])).toEqual([
+      ['Run', 'missing'],
+      ['WeightTraining', null],
+    ]);
+    expect(body.training.volume).toEqual({
+      km: 21.5,
+      status: 'under',
+      kmByDate: { '2026-10-26': 7.4, '2026-10-28': 6.1, '2026-10-30': 8 },
+    });
+    expect(body.training.fitness).toMatchObject({ ctl: 48.2, atl: 55.9 });
+
+    await put('/api/log/2026-10-30', { kneeOk: true });
+    body = (await (await get('/api/today')).json()) as any;
+    expect(body.training.activities[0].kneeFlag).toBeNull();
+  });
+
+  it('sync reports when intervals.icu is not configured or fails', async () => {
+    const plain = createApp({ now: () => NOW });
+    expect((await plain.request('/api/sync', { method: 'POST' }, env)).status).toBe(409);
+
+    const failing = createApp({
+      now: () => NOW,
+      intervalsSource: {
+        activities: async () => {
+          throw new IntervalsError(401, 'Unauthorized');
+        },
+        wellness: async () => [],
+      },
+    });
+    const res = await failing.request('/api/sync', { method: 'POST' }, env);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'intervals_auth_failed' });
   });
 
   it('fails closed when Access is not configured', async () => {
