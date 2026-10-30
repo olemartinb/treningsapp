@@ -8,8 +8,10 @@ import type { PeriodVolume } from '../../server/src/training/volume';
 import type { Week, WeekDay } from '../../server/src/training/week';
 import type { PlanDay, PlanPeriod } from '../../server/src/plan/overview';
 import type { PlannedSession, SessionKind, SessionPatch } from '../../server/src/plan/types';
+import type { Progress } from '../../server/src/progress/build';
 
 export { isRun, paceSecPerKm } from '../../server/src/intervals/types';
+export type { Progress };
 export type { Activity, DailyLog, DayInfo, KneeFlag, PeriodVolume, PeriodWithTarget, PlanDay, PlanPeriod, PlannedSession, Race, SessionKind, SessionPatch, Week, WeekDay, WeekType, Wellness };
 
 export interface Training {
@@ -58,6 +60,7 @@ export const api = {
   saveLog: (date: string, patch: DailyLogPatch) =>
     request<DailyLog>(`/api/log/${date}`, { method: 'PUT', body: JSON.stringify(patch) }),
   sync: () => request<{ activities: number; wellness: number; lastSyncAt: string }>('/api/sync', { method: 'POST' }),
+  progress: (weeks = 26) => request<Progress>(`/api/progress?weeks=${weeks}`),
   week: (start: string) => request<Week>(`/api/week?start=${start}`),
   plan: (weeks = 8) => request<{ today: string; periods: PlanPeriod[] }>(`/api/plan?weeks=${weeks}`),
   createSession: (session: SessionPatch & { date: string; kind: SessionKind }) =>

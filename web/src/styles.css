@@ -20,6 +20,19 @@
   --warn: light-dark(oklch(60% 0.15 70), oklch(84% 0.14 80));
 
   --barne: light-dark(oklch(57% 0.16 48), oklch(81% 0.13 58));
+  /* Chart marks: validated with the dataviz validator against the card surfaces
+     (#ffffff light, #15181f dark). Text never uses these. */
+  --viz-1: light-dark(#2a78d6, #3987e5);
+  --viz-atl: light-dark(#e87ba4, #d55181);
+  --viz-barne: light-dark(#eb6834, #d95926);
+  --viz-ene: light-dark(#1baf7a, #199e70);
+  --viz-grid: light-dark(oklch(92% 0.006 265), oklch(27% 0.014 265));
+  --viz-band: light-dark(oklch(20% 0.02 265 / 0.09), oklch(100% 0 0 / 0.12));
+  --viz-muted: light-dark(oklch(72% 0.012 265), oklch(48% 0.014 265));
+  /* Opaque card colour, for the 2px ring around chart dots. */
+  --surface-solid: light-dark(#ffffff, #15181f);
+  --status-good: #0ca30c;
+  --status-critical: #d03b3b;
   --ene: light-dark(oklch(50% 0.11 218), oklch(82% 0.11 205));
   --week: var(--accent);
 
@@ -61,10 +74,9 @@ button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.num {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-}
+/* Large standalone numbers: proportional figures. Columns of numbers: add .tnum. */
+.num { letter-spacing: -0.03em; }
+.tnum { font-variant-numeric: tabular-nums; }
 
 .card {
   position: relative;

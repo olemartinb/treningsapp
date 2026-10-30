@@ -16,8 +16,8 @@ defineProps<{ days: DayInfo[]; today: string; kmByDate?: Record<string, number> 
       :aria-current="d.date === today ? 'date' : undefined"
     >
       <span class="wd">{{ weekdayLetter(d.date) }}</span>
-      <span class="dn num">{{ Number(d.date.slice(8)) }}</span>
-      <span class="km num">{{ kmByDate?.[d.date] ? formatDecimal(kmByDate[d.date]!) : '' }}</span>
+      <span class="dn num tnum">{{ Number(d.date.slice(8)) }}</span>
+      <span class="km num tnum">{{ kmByDate?.[d.date] ? formatDecimal(kmByDate[d.date]!) : '' }}</span>
       <span class="mark">
         <ArrowLeftRight v-if="d.handover" aria-hidden="true" />
         <i v-else-if="d.kidsHomeAllDay" class="dot" />

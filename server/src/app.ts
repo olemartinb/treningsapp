@@ -8,7 +8,7 @@ import { GoogleCalendar, GoogleNotConnectedError } from './calendar/google.js';
 import { CalendarService, type CalendarSource, type EventCache, type Race } from './calendar/service.js';
 import { getLog, lastWeight, listLogs, upsertLog, type DailyLogPatch } from './log/repo.js';
 import { IntervalsError, type IntervalsSource } from './intervals/client.js';
-import { countActivities, latestWellness, listActivities } from './intervals/repo.js';
+import { countActivities, latestWellness, listActivities, listWellness } from './intervals/repo.js';
 import { hiddenActivities, intervalsFromEnv, lastSyncAt, syncRecent } from './intervals/sync.js';
 import { kneeFlag } from './training/knee.js';
 import { periodVolume, type PeriodVolume } from './training/volume.js';
@@ -16,6 +16,7 @@ import { buildWeek } from './training/week.js';
 import { bad, dateQuery, range } from './http.js';
 import { listSessions } from './plan/repo.js';
 import { planRoutes } from './routes/plan.js';
+import { buildProgress } from './progress/build.js';
 
 export interface AppOptions {
   /** Overrides Google (tests). */
@@ -160,6 +161,31 @@ export function createApp(options: AppOptions = {}) {
     return next();
   });
   app.route('/plan', planRoutes(now));
+
+  // --- Progress ---------------------------------------------------------------
+  app.get('/progress', async (c) => {
+    const db = c.env.DB;
+    const today = todayOslo(now());
+    const weeks = Math.min(52, Math.max(4, Number(c.req.query('weeks') ?? 26) || 26));
+    const kneeDays = 56;
+    const from = addDays(mondayOf(today), -7 * (weeks - 1));
+    const earliest = from < addDays(today, -(kneeDays - 1)) ? from : addDays(today, -(kneeDays - 1));
+    const [activities, logs, wellness, sessions] = await Promise.all([
+      listActivities(db, from, today),
+      listLogs(db, addDays(earliest, -7), today),
+      listWellness(db, from, today),
+      listSessions(db, from, today),
+    ]);
+    let calendarDays = null;
+    if (await calendarConnected(c)) {
+      try {
+        calendarDays = (await c.var.calendar.days(from, addDays(mondayOf(today), 6))).days;
+      } catch (err) {
+        if (!(err instanceof GoogleNotConnectedError)) throw err;
+      }
+    }
+    return c.json(buildProgress({ today, weeks, calendarDays, activities, logs, wellness, sessions, kneeDays }));
+  });
 
   // --- Week (Mon–Sun) -----------------------------------------------------
   app.get('/week', async (c) => {

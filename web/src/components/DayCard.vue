@@ -34,7 +34,7 @@ function detail(a: WeekDay['activities'][number]) {
           <Check v-if="knee" aria-hidden="true" /><X v-else aria-hidden="true" />
         </span>
       </span>
-      <span class="km num" :class="{ zero: !day.runKm }">{{ day.runKm ? formatDecimal(day.runKm) : '' }}</span>
+      <span class="km num tnum" :class="{ zero: !day.runKm }">{{ day.runKm ? formatDecimal(day.runKm) : '' }}</span>
     </div>
 
     <p v-for="r in day.races" :key="r.title" class="race small"><Flag aria-hidden="true" /> {{ r.title }}</p>

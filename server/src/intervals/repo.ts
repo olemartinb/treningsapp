@@ -78,3 +78,11 @@ export async function latestWellness(db: D1Database, onOrBefore: IsoDate): Promi
     .first<{ date: string; ctl: number | null; atl: number | null; weight_kg: number | null; resting_hr: number | null }>();
   return row ? { date: row.date, ctl: row.ctl, atl: row.atl, weightKg: row.weight_kg, restingHr: row.resting_hr } : null;
 }
+
+export async function listWellness(db: D1Database, from: IsoDate, to: IsoDate): Promise<Wellness[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM wellness WHERE date BETWEEN ? AND ? ORDER BY date')
+    .bind(from, to)
+    .all<{ date: string; ctl: number | null; atl: number | null; weight_kg: number | null; resting_hr: number | null }>();
+  return results.map((r) => ({ date: r.date, ctl: r.ctl, atl: r.atl, weightKg: r.weight_kg, restingHr: r.resting_hr }));
+}
