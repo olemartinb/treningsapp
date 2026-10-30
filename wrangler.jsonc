@@ -20,10 +20,12 @@
   "vars": {
     "CAL_KIDS_NAME": "Samvær",
     "CAL_RACES_NAME": "Løp / trening",
-    // Set after creating the Access application (Zero Trust → Access → Applications).
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": ""
+    // Access application "Treningsapp" (Zero Trust → Access → Applications). Not secret.
+    "ACCESS_TEAM_DOMAIN": "olemartin.cloudflareaccess.com",
+    "ACCESS_AUD": "44a2bc5e3d77a83b48c8854966f0aa7ee1695ba54c3628e340b46794aafb649f"
   },
+  // Only the Access-protected workers.dev URL; no per-version preview URLs.
+  "preview_urls": false,
   // Secrets (wrangler secret put): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, INTERVALS_API_KEY, INTERVALS_ATHLETE_ID
   "observability": { "enabled": true }
 }
