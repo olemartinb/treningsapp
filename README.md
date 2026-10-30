@@ -61,16 +61,26 @@ the handover time; other all-day events in a barneuke mean the kids are home all
 Km targets (`server/src/training/targets.ts`) scale with period length: a 4-day eneuke gets 60–68 × 4/7 = 34,3–38,9 km.
 A Mon–Sun week spanning a handover blends both types day by day.
 
+Plan templates (`server/src/plan/template.ts`) follow the eneuke/barneuke templates in `CLAUDE.md`: a 7-day period
+starting on the handover day gets them as written (eneuke 60 km, barneuke 28 km); shorter periods keep the
+highest-priority sessions and longer ones add easy runs, always within the scaled target. Hard sessions are kept
+apart, races go on race day, the day before a race only gets an easy run, and existing sessions are never touched.
+
 ## API
 
 | Method | Path | |
 |---|---|---|
-| GET | `/api/today` | Week type, flags, period + day strip, target, today's log, 7-day weight average, next race |
+| GET | `/api/today` | Week type, flags, period + day strip, km vs target, today's plan and activities, knee/weight log, next race |
+| GET | `/api/week?start=` | Mon–Sun: kid-week type, plan, activities, knee status and blended target per day |
+| GET | `/api/plan?weeks=8` | Upcoming periods: target, run + planned km, sessions per day |
+| POST | `/api/plan/sessions` · PATCH/DELETE `/api/plan/sessions/:id` | Planned sessions (`{ date, kind, title?, km?, details?, done? }`) |
+| POST | `/api/plan/fill` | `{ periodStart }` – fill a period from the week-type template |
+| GET | `/api/progress?weeks=26` | Weekly km vs target, threshold pace, easy-run efficiency, weight, CTL/ATL/TSB, knee history |
 | GET | `/api/calendar/days?from&to[&refresh=true]` | Day-by-day kid-week info + periods with targets |
 | GET | `/api/calendar/races?from&to` | Races from "Løp / trening" |
 | GET | `/api/log?from&to` · `/api/log/:date` | Knee test + weight |
 | PUT | `/api/log/:date` | `{ kneeOk?, kneeNote?, weightKg? }` (partial update) |
-| POST | `/api/sync` | Pull activities + wellness from intervals.icu (backfills 180 days the first time) |
+| POST | `/api/sync` | Pull activities + wellness from intervals.icu (backfills 180 days until history is found) |
 | GET | `/api/activities?from&to` | Cached activities |
 | GET | `/api/auth/google/status` · `/start` · `/callback`, POST `/disconnect` | OAuth |
 
@@ -80,6 +90,10 @@ A Mon–Sun week spanning a handover blends both types day by day.
 - [x] 2. Google Calendar OAuth + week-type resolver (tested against real-shaped events)
 - [x] 3. Knee test + weight log (Today view)
 - [x] 4. intervals.icu sync + activity cache (on open when stale, nightly via Cron Trigger)
-- [ ] 5. Week and Today views (planned vs. logged, run-without-knee-test flags)
-- [ ] 6. Plan view
-- [ ] 7. Progress charts
+- [x] 5. Week and Today views (planned vs. logged, run-without-knee-test flags)
+- [x] 6. Plan view (template fill, editable sessions, strength done-checkbox)
+- [x] 7. Progress charts
+
+Known limits: threshold pace is the whole-session average (warm-up and jog recoveries included), not the work
+intervals; easy runs are "average HR ≤ 150, ≥ 4 km"; older activities uploaded to intervals.icu after the
+backfill are only picked up within the last 6 weeks.
