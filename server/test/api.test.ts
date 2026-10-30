@@ -149,6 +149,16 @@ describe('API', () => {
     expect(await res.json()).toEqual({ error: 'intervals_auth_failed' });
   });
 
+  it('week endpoint returns Monday–Sunday with calendar and activities', async () => {
+    await app.request('/api/sync', { method: 'POST' }, env);
+    const res = await get('/api/week?start=2026-10-29');
+    expect(res.status).toBe(200);
+    const w = (await res.json()) as any;
+    expect([w.start, w.end, w.weekNo, w.runKm]).toEqual(['2026-10-26', '2026-11-01', 44, 21.5]);
+    expect(w.days[4]).toMatchObject({ date: '2026-10-30', type: 'barneuke', kidsHomeAllDay: true });
+    expect((await get('/api/week?start=nope')).status).toBe(400);
+  });
+
   it('fails closed when Access is not configured', async () => {
     env.ALLOW_UNAUTHENTICATED = undefined;
     const res = await get('/api/today');

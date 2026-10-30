@@ -2,16 +2,18 @@
 import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { AccessError, accessToken, verifyAccessJwt } from './access.js';
-import { addDays, diffDays, isIsoDate, todayOslo, type IsoDate } from './dates.js';
+import { addDays, diffDays, isIsoDate, mondayOf, todayOslo } from './dates.js';
 import type { Env } from './env.js';
 import { GoogleCalendar, GoogleNotConnectedError } from './calendar/google.js';
-import { CalendarService, type CalendarSource, type EventCache } from './calendar/service.js';
+import { CalendarService, type CalendarSource, type EventCache, type Race } from './calendar/service.js';
 import { getLog, lastWeight, listLogs, upsertLog, type DailyLogPatch } from './log/repo.js';
 import { IntervalsError, type IntervalsSource } from './intervals/client.js';
 import { countActivities, latestWellness, listActivities } from './intervals/repo.js';
 import { hiddenActivities, intervalsFromEnv, lastSyncAt, syncRecent } from './intervals/sync.js';
 import { kneeFlag } from './training/knee.js';
 import { periodVolume, type PeriodVolume } from './training/volume.js';
+import { buildWeek } from './training/week.js';
+import { bad, dateQuery, range } from './http.js';
 
 export interface AppOptions {
   /** Overrides Google (tests). */
@@ -23,15 +25,6 @@ export interface AppOptions {
 
 type AppEnv = { Bindings: Env; Variables: { google: GoogleCalendar; calendar: CalendarService } };
 
-const MAX_RANGE_DAYS = 400;
-const bad = (message: string) => new HTTPException(400, { message });
-
-function range(c: Context<AppEnv>): { from: IsoDate; to: IsoDate } {
-  const from = c.req.query('from') ?? '';
-  const to = c.req.query('to') ?? '';
-  if (!isIsoDate(from) || !isIsoDate(to) || to < from || diffDays(from, to) > MAX_RANGE_DAYS) throw bad('Invalid date range');
-  return { from, to };
-}
 
 function parsePatch(body: unknown): DailyLogPatch {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) throw bad('Body must be an object');
@@ -158,6 +151,24 @@ export function createApp(options: AppOptions = {}) {
   app.get('/activities', async (c) => {
     const { from, to } = range(c);
     return c.json({ activities: await listActivities(c.env.DB, from, to) });
+  });
+
+  // --- Week (Mon–Sun) -----------------------------------------------------
+  app.get('/week', async (c) => {
+    const db = c.env.DB;
+    const start = mondayOf(dateQuery(c, 'start', todayOslo(now())));
+    const end = addDays(start, 6);
+    const [logs, activities] = await Promise.all([listLogs(db, start, end), listActivities(db, start, end)]);
+    let calendarDays = null;
+    let races: Race[] = [];
+    if (await calendarConnected(c)) {
+      try {
+        [{ days: calendarDays }, races] = await Promise.all([c.var.calendar.days(start, end), c.var.calendar.races(start, end)]);
+      } catch (err) {
+        if (!(err instanceof GoogleNotConnectedError)) throw err;
+      }
+    }
+    return c.json(buildWeek({ anyDate: start, calendarDays, races, logs, activities }));
   });
 
   // --- Today (aggregate for the morning view) -----------------------------

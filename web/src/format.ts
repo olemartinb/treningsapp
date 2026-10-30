@@ -35,7 +35,7 @@ const weekdayShort = fmt({ weekday: 'narrow' });
 export const weekdayLetter = (d: string) => weekdayShort.format(parse(d)).toUpperCase();
 
 const weekdayDay = fmt({ weekday: 'short', day: 'numeric', month: 'short' });
-export const formatWeekdayDate = (d: string) => weekdayDay.format(parse(d));
+export const formatWeekdayDate = (d: string) => capitalize(weekdayDay.format(parse(d)));
 
 const osloTime = new Intl.DateTimeFormat('nb-NO', { timeZone: 'Europe/Oslo', hour: '2-digit', minute: '2-digit' });
 export const formatTime = (iso: string) => osloTime.format(new Date(iso));

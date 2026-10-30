@@ -5,9 +5,10 @@ import type { DailyLog, DailyLogPatch } from '../../server/src/log/types';
 import type { Activity, Wellness } from '../../server/src/intervals/types';
 import type { KneeFlag } from '../../server/src/training/knee';
 import type { PeriodVolume } from '../../server/src/training/volume';
+import type { Week, WeekDay } from '../../server/src/training/week';
 
 export { isRun, paceSecPerKm } from '../../server/src/intervals/types';
-export type { Activity, DailyLog, DayInfo, KneeFlag, PeriodVolume, PeriodWithTarget, Race, WeekType, Wellness };
+export type { Activity, DailyLog, DayInfo, KneeFlag, PeriodVolume, PeriodWithTarget, Race, Week, WeekDay, WeekType, Wellness };
 
 export interface Training {
   configured: boolean;
@@ -54,5 +55,6 @@ export const api = {
   saveLog: (date: string, patch: DailyLogPatch) =>
     request<DailyLog>(`/api/log/${date}`, { method: 'PUT', body: JSON.stringify(patch) }),
   sync: () => request<{ activities: number; wellness: number; lastSyncAt: string }>('/api/sync', { method: 'POST' }),
+  week: (start: string) => request<Week>(`/api/week?start=${start}`),
   activities: (from: string, to: string) => request<{ activities: Activity[] }>(`/api/activities?from=${from}&to=${to}`),
 };

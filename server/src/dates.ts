@@ -55,3 +55,10 @@ export function dateRange(start: IsoDate, endInclusive: IsoDate): IsoDate[] {
 export function isIsoDate(s: unknown): s is IsoDate {
   return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(toUtc(s));
 }
+
+/** ISO 8601 week number (weeks start Monday; week 1 contains the first Thursday). */
+export function isoWeek(d: IsoDate): number {
+  const thursday = addDays(d, 4 - weekday(d));
+  const jan1 = `${thursday.slice(0, 4)}-01-01`;
+  return Math.floor(diffDays(jan1, thursday) / 7) + 1;
+}
