@@ -3,7 +3,7 @@ import fixture from './fixtures/intervals-activities.json' with { type: 'json' }
 import { IntervalsClient, IntervalsError, toActivity, toWellness, type IcuActivity, type IntervalsSource } from '../src/intervals/client.js';
 import { listActivities, latestWellness } from '../src/intervals/repo.js';
 import { BACKFILL_DAYS, RECENT_DAYS, hiddenActivities, nightlySync, syncRange, syncRecent } from '../src/intervals/sync.js';
-import { paceSecPerKm, type Activity, type Wellness } from '../src/intervals/types.js';
+import { emptyWellness, paceSecPerKm, type Activity, type Wellness } from '../src/intervals/types.js';
 import { kneeFlag } from '../src/training/knee.js';
 import { periodVolume } from '../src/training/volume.js';
 import type { Env } from '../src/env.js';
@@ -50,14 +50,25 @@ describe('mapping', () => {
     expect(paceSecPerKm({ distanceM: null, movingS: 2400 })).toBeNull();
   });
 
-  it('maps wellness and rejects odd ids', () => {
-    expect(toWellness({ id: '2026-10-30', ctl: 52.3, atl: 61.1, weight: 71.8, restingHR: 44 })).toEqual({
+  it('maps wellness (incl. sleep and HRV) and rejects odd ids', () => {
+    const icu = { id: '2026-10-30', ctl: 52.3, atl: 61.1, weight: 71.8, restingHR: 44, sleepSecs: 27_360, sleepScore: 81, avgSleepingHR: 47, hrv: 62, readiness: 74, steps: 9120, spO2: 96, respiration: 14.2 };
+    expect(toWellness(icu)).toEqual({
       date: '2026-10-30',
       ctl: 52.3,
       atl: 61.1,
       weightKg: 71.8,
       restingHr: 44,
+      sleepSecs: 27_360,
+      sleepScore: 81,
+      sleepHr: 47,
+      hrv: 62,
+      readiness: 74,
+      steps: 9120,
+      spo2: 96,
+      respiration: 14.2,
+      raw: JSON.stringify(icu),
     });
+    expect(toWellness({ id: '2026-10-29' })).toMatchObject({ sleepSecs: null, hrv: null });
     expect(toWellness({ id: 'nope' })).toBeNull();
   });
 });
@@ -83,11 +94,11 @@ describe('IntervalsClient', () => {
 describe('sync', () => {
   it('stores activities and wellness, and updates on re-sync', async () => {
     const db = testD1();
-    const { source } = fakeSource(activities, [{ date: '2026-10-30', ctl: 50, atl: 60, weightKg: null, restingHr: null }]);
+    const { source } = fakeSource(activities, [{ ...emptyWellness('2026-10-30'), ctl: 50, atl: 60, sleepSecs: 26_000, hrv: 61 }]);
     const result = await syncRange(db, source, '2026-10-01', '2026-10-30', NOW);
     expect(result).toMatchObject({ activities: 5, hidden: 0, wellness: 1, lastSyncAt: NOW.toISOString() });
     expect(await listActivities(db, '2026-10-30', '2026-10-30')).toHaveLength(2);
-    expect(await latestWellness(db, '2026-10-30')).toMatchObject({ ctl: 50, atl: 60 });
+    expect(await latestWellness(db, '2026-10-30')).toMatchObject({ ctl: 50, atl: 60, sleepSecs: 26_000, hrv: 61 });
 
     const renamed = activities.map((a) => (a.id === 'i90000004' ? { ...a, name: 'Rolig + strides' } : a));
     await syncRange(db, fakeSource(renamed).source, '2026-10-01', '2026-10-30', NOW);

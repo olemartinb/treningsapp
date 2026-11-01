@@ -20,7 +20,37 @@ export interface Wellness {
   atl: number | null;
   weightKg: number | null;
   restingHr: number | null;
+  /** Sleep for the night ending on this date. */
+  sleepSecs: number | null;
+  sleepScore: number | null;
+  /** Average heart rate while asleep. */
+  sleepHr: number | null;
+  /** HRV (rMSSD), ms. */
+  hrv: number | null;
+  readiness: number | null;
+  steps: number | null;
+  spo2: number | null;
+  respiration: number | null;
+  /** The full intervals.icu record as JSON (set by the API client, stored for later use). */
+  raw?: string;
 }
+
+/** A wellness day with only the given fields set. */
+export const emptyWellness = (date: IsoDate): Wellness => ({
+  date,
+  ctl: null,
+  atl: null,
+  weightKg: null,
+  restingHr: null,
+  sleepSecs: null,
+  sleepScore: null,
+  sleepHr: null,
+  hrv: null,
+  readiness: null,
+  steps: null,
+  spo2: null,
+  respiration: null,
+});
 
 /** Types that count towards running volume (VirtualRun = treadmill). */
 export const RUN_TYPES: readonly string[] = ['Run', 'TrailRun', 'VirtualRun'];

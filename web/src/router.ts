@@ -8,5 +8,6 @@ export const router = createRouter({
     { path: '/uke', name: 'week', component: () => import('./views/WeekView.vue'), meta: { label: 'Uke' } },
     { path: '/plan', name: 'plan', component: () => import('./views/PlanView.vue'), meta: { label: 'Plan' } },
     { path: '/fremgang', name: 'progress', component: () => import('./views/ProgressView.vue'), meta: { label: 'Fremgang' } },
+    { path: '/helse', name: 'health', component: () => import('./views/HealthView.vue'), meta: { label: 'Helse' } },
   ],
 });

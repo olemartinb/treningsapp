@@ -79,3 +79,9 @@ const ACTIVITY_LABEL: Record<string, string> = {
   Workout: 'Trening',
 };
 export const activityLabel = (type: string) => ACTIVITY_LABEL[type] ?? type;
+
+/** Hours → '7 t 32 min'. */
+export function formatSleep(hours: number): string {
+  const total = Math.round(hours * 60);
+  return `${Math.floor(total / 60)} t ${String(total % 60).padStart(2, '0')} min`;
+}

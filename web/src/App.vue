@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDays, ChartLine, ListChecks, Sun } from 'lucide-vue-next';
+import { CalendarDays, ChartLine, HeartPulse, ListChecks, Sun } from 'lucide-vue-next';
 import { useRoute } from 'vue-router';
 
 const route = useRoute();
@@ -8,6 +8,7 @@ const tabs = [
   { path: '/uke', label: 'Uke', icon: CalendarDays },
   { path: '/plan', label: 'Plan', icon: ListChecks },
   { path: '/fremgang', label: 'Fremgang', icon: ChartLine },
+  { path: '/helse', label: 'Helse', icon: HeartPulse },
 ];
 </script>
 
@@ -47,9 +48,9 @@ const tabs = [
   left: 50%;
   bottom: max(16px, env(safe-area-inset-bottom));
   translate: -50% 0;
-  width: min(100% - 32px, 420px);
+  width: min(100% - 24px, 460px);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 6px;
   border-radius: 999px;

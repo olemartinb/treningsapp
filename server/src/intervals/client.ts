@@ -30,13 +30,21 @@ export interface IcuActivity {
   _note?: string;
 }
 
-/** Fields we use from GET /athlete/{id}/wellness. */
+/** Fields we use from GET /athlete/{id}/wellness (Garmin fills most of the sleep/recovery ones). */
 export interface IcuWellness {
   id: string;
   ctl?: number | null;
   atl?: number | null;
   weight?: number | null;
   restingHR?: number | null;
+  sleepSecs?: number | null;
+  sleepScore?: number | null;
+  avgSleepingHR?: number | null;
+  hrv?: number | null;
+  readiness?: number | null;
+  steps?: number | null;
+  spO2?: number | null;
+  respiration?: number | null;
 }
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -59,7 +67,22 @@ export function toActivity(a: IcuActivity): Activity | null {
 
 export function toWellness(w: IcuWellness): Wellness | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(w.id)) return null;
-  return { date: w.id, ctl: num(w.ctl), atl: num(w.atl), weightKg: num(w.weight), restingHr: num(w.restingHR) };
+  return {
+    date: w.id,
+    ctl: num(w.ctl),
+    atl: num(w.atl),
+    weightKg: num(w.weight),
+    restingHr: num(w.restingHR),
+    sleepSecs: num(w.sleepSecs),
+    sleepScore: num(w.sleepScore),
+    sleepHr: num(w.avgSleepingHR),
+    hrv: num(w.hrv),
+    readiness: num(w.readiness),
+    steps: num(w.steps),
+    spo2: num(w.spO2),
+    respiration: num(w.respiration),
+    raw: JSON.stringify(w),
+  };
 }
 
 export class IntervalsError extends Error {

@@ -17,6 +17,7 @@ import { bad, dateQuery, range } from './http.js';
 import { listSessions } from './plan/repo.js';
 import { planRoutes } from './routes/plan.js';
 import { buildProgress } from './progress/build.js';
+import { buildHealth } from './health/build.js';
 
 export interface AppOptions {
   /** Overrides Google (tests). */
@@ -185,6 +186,15 @@ export function createApp(options: AppOptions = {}) {
       }
     }
     return c.json(buildProgress({ today, weeks, calendarDays, activities, logs, wellness, sessions, kneeDays }));
+  });
+
+  // --- Helse (sleep and recovery from intervals.icu) ----------------------------
+  app.get('/wellness', async (c) => {
+    const today = todayOslo(now());
+    const days = Math.min(180, Math.max(14, Number(c.req.query('days') ?? 60) || 60));
+    // Seven extra days so the first day already has a 7-day baseline.
+    const wellness = await listWellness(c.env.DB, addDays(today, -(days + 7)), today);
+    return c.json({ ...buildHealth({ today, days, wellness }), configured: Boolean(intervalsSource(c)) });
   });
 
   // --- Week (Mon–Sun) -----------------------------------------------------

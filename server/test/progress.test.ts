@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import calendar from './fixtures/samvaer-2026h2.json' with { type: 'json' };
 import { resolveDays, type CalEvent } from '../src/calendar/kidWeeks.js';
-import type { Activity } from '../src/intervals/types.js';
+import { emptyWellness, type Activity } from '../src/intervals/types.js';
 import type { DailyLog } from '../src/log/types.js';
 import { buildProgress, isThresholdRun, kneeStreak, paceAtHr, rollingMean } from '../src/progress/build.js';
 
@@ -71,7 +71,7 @@ describe('buildProgress', () => {
     calendarDays: resolveDays(events, '2026-09-21', '2026-10-18'),
     activities,
     logs: [log('2026-10-12', true, 72.4), log('2026-10-13', true, 72.0), log('2026-10-14', null, 71.6)],
-    wellness: [{ date: '2026-10-13', ctl: 41.26, atl: 52.04, weightKg: 75, restingHr: 44 }],
+    wellness: [{ ...emptyWellness('2026-10-13'), ctl: 41.26, atl: 52.04, weightKg: 75, restingHr: 44 }],
     sessions: [],
     kneeDays: 14,
   });

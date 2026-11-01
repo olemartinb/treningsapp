@@ -9,6 +9,9 @@ const LAST_SYNC_KEY = 'intervals.last_sync';
 const HIDDEN_KEY = 'intervals.hidden';
 /** Set once a backfill has actually returned activities (an empty account doesn't count). */
 const BACKFILLED_KEY = 'intervals.backfilled_at';
+/** Bump when more wellness fields are stored, so the next sync re-reads the history. */
+const WELLNESS_SCHEMA = '2';
+const WELLNESS_SCHEMA_KEY = 'intervals.wellness_schema';
 /** History fetched until a backfill has found something. */
 export const BACKFILL_DAYS = 180;
 /** Window re-read on later syncs, so edits and late uploads are picked up. */
@@ -51,12 +54,14 @@ export async function syncRange(db: D1Database, source: IntervalsSource, from: I
   return result;
 }
 
-/** Backfills until history has been found, otherwise re-reads the recent window. */
+/** Backfills until history has been found (or after a wellness schema bump), otherwise re-reads the recent window. */
 export async function syncRecent(db: D1Database, source: IntervalsSource, now: Date, recentDays = RECENT_DAYS): Promise<SyncResult> {
   const today = todayOslo(now);
-  const isBackfill = !(await backfilled(db));
+  const schemaCurrent = (await kvGet(db, WELLNESS_SCHEMA_KEY)) === WELLNESS_SCHEMA;
+  const isBackfill = !(await backfilled(db)) || !schemaCurrent;
   const result = await syncRange(db, source, addDays(today, -(isBackfill ? BACKFILL_DAYS : recentDays)), today, now);
   if (isBackfill && result.activities > 0) await kvSet(db, BACKFILLED_KEY, result.lastSyncAt);
+  if (!schemaCurrent) await kvSet(db, WELLNESS_SCHEMA_KEY, WELLNESS_SCHEMA);
   return result;
 }
 

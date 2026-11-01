@@ -6,7 +6,7 @@ import type { Env } from '../src/env.js';
 import { testD1 } from './d1.js';
 import intervalsFixture from './fixtures/intervals-activities.json' with { type: 'json' };
 import { IntervalsError, toActivity, type IcuActivity } from '../src/intervals/client.js';
-import type { Activity } from '../src/intervals/types.js';
+import { emptyWellness, type Activity } from '../src/intervals/types.js';
 
 const icuActivities = (intervalsFixture.items as IcuActivity[]).map(toActivity).filter((a): a is Activity => a !== null);
 
@@ -23,7 +23,7 @@ const app = createApp({
   calendarSource: { listEvents: async (name) => (name === 'Samvær' ? (fixture.items as CalEvent[]) : races) },
   intervalsSource: {
     activities: async (from, to) => ({ activities: icuActivities.filter((a) => a.date >= from && a.date <= to), hidden: 1 }),
-    wellness: async () => [{ date: '2026-10-30', ctl: 48.2, atl: 55.9, weightKg: null, restingHr: 45 }],
+    wellness: async () => [{ ...emptyWellness('2026-10-30'), ctl: 48.2, atl: 55.9, restingHr: 45, sleepSecs: 7 * 3600, hrv: 58 }],
   },
 });
 
@@ -213,6 +213,16 @@ describe('API', () => {
   it('plan needs the calendar', async () => {
     const noCalendar = createApp({ now: () => NOW });
     expect((await noCalendar.request('/api/plan', {}, env)).status).toBe(409);
+  });
+
+  it('wellness endpoint returns sleep and recovery after a sync', async () => {
+    await app.request('/api/sync', { method: 'POST' }, env);
+    const body = (await (await get('/api/wellness?days=14')).json()) as any;
+    expect(body.configured).toBe(true);
+    expect(body.days).toHaveLength(14);
+    expect(body.lastNight).toMatchObject({ date: '2026-10-30', sleepH: 7 });
+    expect(body.latest).toMatchObject({ date: '2026-10-30', restingHr: 45, hrv: 58, restingHrBaseline: null });
+    expect(body.form).toBe('ukjent'); // no baseline yet
   });
 
   it('fails closed when Access is not configured', async () => {

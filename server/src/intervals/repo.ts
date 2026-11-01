@@ -60,29 +60,92 @@ export function deleteActivitiesExcept(db: D1Database, from: IsoDate, to: IsoDat
     .bind(from, to, JSON.stringify(keepIds));
 }
 
+const WELLNESS_COLUMNS = [
+  'ctl',
+  'atl',
+  'weight_kg',
+  'resting_hr',
+  'sleep_secs',
+  'sleep_score',
+  'sleep_hr',
+  'hrv',
+  'readiness',
+  'steps',
+  'spo2',
+  'respiration',
+  'raw',
+] as const;
+
 export function upsertWellness(db: D1Database, w: Wellness, now: Date): D1PreparedStatement {
+  const cols = ['date', ...WELLNESS_COLUMNS, 'updated_at'];
   return db
     .prepare(
-      `INSERT INTO wellness (date, ctl, atl, weight_kg, resting_hr, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(date) DO UPDATE SET
-         ctl = excluded.ctl, atl = excluded.atl, weight_kg = excluded.weight_kg,
-         resting_hr = excluded.resting_hr, updated_at = excluded.updated_at`,
+      `INSERT INTO wellness (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})
+       ON CONFLICT(date) DO UPDATE SET ${[...WELLNESS_COLUMNS, 'updated_at'].map((c) => `${c} = excluded.${c}`).join(', ')}`,
     )
-    .bind(w.date, w.ctl, w.atl, w.weightKg, w.restingHr, now.toISOString());
+    .bind(
+      w.date,
+      w.ctl,
+      w.atl,
+      w.weightKg,
+      w.restingHr,
+      w.sleepSecs,
+      w.sleepScore,
+      w.sleepHr,
+      w.hrv,
+      w.readiness,
+      w.steps,
+      w.spo2,
+      w.respiration,
+      w.raw ?? null,
+      now.toISOString(),
+    );
 }
+
+interface WellnessRow {
+  date: string;
+  ctl: number | null;
+  atl: number | null;
+  weight_kg: number | null;
+  resting_hr: number | null;
+  sleep_secs: number | null;
+  sleep_score: number | null;
+  sleep_hr: number | null;
+  hrv: number | null;
+  readiness: number | null;
+  steps: number | null;
+  spo2: number | null;
+  respiration: number | null;
+}
+
+const wellnessFromRow = (r: WellnessRow): Wellness => ({
+  date: r.date,
+  ctl: r.ctl,
+  atl: r.atl,
+  weightKg: r.weight_kg,
+  restingHr: r.resting_hr,
+  sleepSecs: r.sleep_secs,
+  sleepScore: r.sleep_score,
+  sleepHr: r.sleep_hr,
+  hrv: r.hrv,
+  readiness: r.readiness,
+  steps: r.steps,
+  spo2: r.spo2,
+  respiration: r.respiration,
+});
 
 export async function latestWellness(db: D1Database, onOrBefore: IsoDate): Promise<Wellness | null> {
   const row = await db
     .prepare('SELECT * FROM wellness WHERE date <= ? AND ctl IS NOT NULL ORDER BY date DESC LIMIT 1')
     .bind(onOrBefore)
-    .first<{ date: string; ctl: number | null; atl: number | null; weight_kg: number | null; resting_hr: number | null }>();
-  return row ? { date: row.date, ctl: row.ctl, atl: row.atl, weightKg: row.weight_kg, restingHr: row.resting_hr } : null;
+    .first<WellnessRow>();
+  return row ? wellnessFromRow(row) : null;
 }
 
 export async function listWellness(db: D1Database, from: IsoDate, to: IsoDate): Promise<Wellness[]> {
   const { results } = await db
     .prepare('SELECT * FROM wellness WHERE date BETWEEN ? AND ? ORDER BY date')
     .bind(from, to)
-    .all<{ date: string; ctl: number | null; atl: number | null; weight_kg: number | null; resting_hr: number | null }>();
-  return results.map((r) => ({ date: r.date, ctl: r.ctl, atl: r.atl, weightKg: r.weight_kg, restingHr: r.resting_hr }));
+    .all<WellnessRow>();
+  return results.map(wellnessFromRow);
 }
