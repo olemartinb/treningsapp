@@ -17,12 +17,12 @@ export interface KindInfo {
   label: string;
   /** Counts towards running km. */
   run: boolean;
-  /** Hard session: not the day before a race. */
+  /** Hard on the legs: kept apart from other hard sessions. */
   hard: boolean;
 }
 
 export const SESSION_KINDS: Record<SessionKind, KindInfo> = {
-  long: { label: 'Langtur', run: true, hard: false },
+  long: { label: 'Langtur', run: true, hard: true },
   threshold: { label: 'Terskel', run: true, hard: true },
   vo2: { label: 'Fart / VO2max', run: true, hard: true },
   easy: { label: 'Rolig tur', run: true, hard: false },

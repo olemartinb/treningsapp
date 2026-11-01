@@ -56,6 +56,7 @@ const runKm = (slots: Slot[]) => slots.reduce((sum, s) => sum + (SESSION_KINDS[s
 
 export interface TemplateInput {
   period: Pick<KidPeriod, 'type' | 'start' | 'end' | 'days'>;
+  /** Races in the period and on the day after it (which shapes the period's last day). */
   races: Race[];
   /** Dates in the period that already have sessions (left untouched). */
   takenDates: IsoDate[];
@@ -105,23 +106,33 @@ export function templateForPeriod({ period, races, takenDates, usedKm, today }: 
   }
 
   // Place each slot on its preferred day (scaled to the period length), else the nearest allowed day.
+  // Hard sessions never land next to each other: one that doesn't fit becomes an easy run.
   const used = new Set<number>();
   const hardDays = new Set<number>();
-  const allowed = (i: number, slot: Slot, strict: boolean) => {
+  const allowed = (i: number, slot: Slot) => {
     if (i < 0 || i >= n || used.has(i) || !isFree(i)) return false;
     if (raceDates.has(addDays(dates[i]!, 1)) && !PRE_RACE_KINDS.includes(slot.kind)) return false;
-    if (!SESSION_KINDS[slot.kind].hard) return true;
-    return !strict || (!hardDays.has(i - 1) && !hardDays.has(i + 1));
+    return !SESSION_KINDS[slot.kind].hard || (!hardDays.has(i - 1) && !hardDays.has(i + 1));
   };
+  const asEasy = (slot: Slot): Slot => ({
+    ...base.find((s) => s.kind === 'easy')!,
+    km: Math.min(MAX_EASY_KM, slot.km ?? MIN_EASY_KM + 1),
+    day: slot.day,
+  });
   // Extra easy runs (day >= 7) are spread evenly over the period.
   const extras = slots.filter((s) => s.day >= 7).length;
   const scaledDay = (slot: Slot) =>
     slot.day >= 7 ? Math.round(((slot.day - 6) * (n - 1)) / (extras + 1)) : Math.round((slot.day * (n - 1)) / 6);
-  for (const slot of slots) {
-    const preferred = scaledDay(slot);
+  for (const wanted of slots) {
+    const preferred = scaledDay(wanted);
     const order = [preferred];
     for (let d = 1; d < n; d++) order.push(preferred + d, preferred - d);
-    const pick = order.find((i) => allowed(i, slot, true)) ?? order.find((i) => allowed(i, slot, false));
+    let slot = wanted;
+    let pick = order.find((i) => allowed(i, slot));
+    if (pick === undefined && SESSION_KINDS[slot.kind].hard && SESSION_KINDS[slot.kind].run) {
+      slot = asEasy(slot);
+      pick = order.find((i) => allowed(i, slot));
+    }
     if (pick === undefined) continue;
     used.add(pick);
     if (SESSION_KINDS[slot.kind].hard) hardDays.add(pick);

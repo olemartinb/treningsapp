@@ -93,7 +93,8 @@ export function planRoutes(now: () => Date) {
     if (!period) throw bad('No kid-week period on that date');
     const last = addDays(period.end, -1);
     const [races, existing, activities] = await Promise.all([
-      c.var.calendar.races(period.start, last),
+      // Through period.end: a race on the next handover day keeps our last day easy.
+      c.var.calendar.races(period.start, period.end),
       listSessions(c.env.DB, period.start, last),
       listActivities(c.env.DB, period.start, addDays(today, -1)),
     ]);

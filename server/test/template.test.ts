@@ -79,8 +79,16 @@ describe('templateForPeriod', () => {
     expect(drafts.some((d) => d.kind === 'long')).toBe(true); // moved, not dropped
   });
 
+  it('keeps the last day easy when a race falls on the day after the period', () => {
+    const p = period('2026-12-22'); // eneuke 20–26 Dec; fart would land on Sat 26th
+    const drafts = templateForPeriod({ ...base, period: p, races: [{ date: '2026-12-27', title: 'Rotevatnet rundt' }] });
+    const last = drafts.find((d) => d.date === '2026-12-26');
+    expect(last === undefined || last.kind === 'easy').toBe(true);
+    expect(drafts.some((d) => d.kind === 'race')).toBe(false); // the race itself belongs to the next period
+  });
+
   it('keeps hard sessions apart', () => {
-    for (const d of ['2026-10-05', '2026-10-12', '2026-11-03', '2026-12-17']) {
+    for (const d of ['2026-10-05', '2026-10-12', '2026-11-03', '2026-12-12', '2026-12-17']) {
       const hard = templateForPeriod({ ...base, period: period(d) })
         .filter((s) => SESSION_KINDS[s.kind].hard)
         .map((s) => s.date);
